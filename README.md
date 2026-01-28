@@ -1,1 +1,1 @@
-# wb26-kernel-protoptye
+# wb26-kernel-prototype
