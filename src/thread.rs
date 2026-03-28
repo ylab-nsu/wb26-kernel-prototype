@@ -67,8 +67,8 @@ extern "C" fn handle_trap(frame: &mut TrapFrame) {
     // println!("Current SP: {:p}", frame);
 
     let time = riscv::register::time::read64();
-    // sbi::timer::set_timer(time + 10_000_000).expect("Can't set timer");
-    sbi::timer::set_timer(time + 1_000).expect("Can't set timer");
+    sbi::timer::set_timer(time + 10_000_000).expect("Can't set timer");
+    // sbi::timer::set_timer(time + 1_000).expect("Can't set timer");
 
     let x: Trap<Interrupt, Exception> = riscv::register::scause::read().cause().try_into().unwrap();
 
@@ -200,12 +200,6 @@ pub fn setup_threads() {
     println!("Current time: {}", time);
     // sbi::timer::set_timer(time + 10_000_000).expect("Can't set timer");
 
-    unsafe {
-        riscv::interrupt::enable();
-        riscv::interrupt::enable_interrupt(SupervisorTimer);
-        // riscv::register::sie::set_stimer();
-    };
-
     let pr0 = Thread {
         id: 0,
         frame: TrapFrame::default(),
@@ -214,4 +208,12 @@ pub fn setup_threads() {
     unsafe {
         PROCESSES.push(pr0);
     }
+}
+
+pub fn enable_threading() {
+    unsafe {
+        riscv::interrupt::enable();
+        riscv::interrupt::enable_interrupt(SupervisorTimer);
+        // riscv::register::sie::set_stimer();
+    };
 }

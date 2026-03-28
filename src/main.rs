@@ -37,15 +37,16 @@ fn main(_hart_id: usize, _dtc: usize) -> ! {
     layout::print_kernel_layout();
 
     unsafe { asm!("csrw sscratch, sp") };
+    thread::enable_threading();
 
-    let ppa = PhysicalPageAllocator::new(0x1000);
-
-    set_global_physical_page_allocator(ppa);
-
-    {
-        let p = PhysicalPage::new();
-        println!("{:x?}", p);
-    }
+    // let ppa = PhysicalPageAllocator::new(0x1000);
+    // 
+    // set_global_physical_page_allocator(ppa);
+    // 
+    // {
+    //     let p = PhysicalPage::new();
+    //     println!("{:x?}", p);
+    // }
 
     loop {
         riscv::asm::wfi();

@@ -1,4 +1,4 @@
-QEMU = "qemu"
+QEMU = "qemu-system-riscv64"
 
 .PHONY: run debug
 
