@@ -11,6 +11,7 @@ mod print;
 mod thread;
 mod layout;
 mod device_tree;
+mod user;
 
 use core::any::Any;
 use core::arch::asm;
@@ -18,7 +19,7 @@ use core::fmt::Write;
 use core::ops::{Deref, DerefMut, Index};
 use core::panic::PanicInfo;
 
-use crate::paging::alloc::{set_global_physical_page_allocator, PhysicalPage, PhysicalPageAllocator};
+// use crate::paging::alloc::{set_global_physical_page_allocator, PhysicalPage, PhysicalPageAllocator};
 use fdt_rs::prelude::FallibleIterator;
 
 #[export_name = "_main"]
@@ -31,8 +32,8 @@ fn main(_hart_id: usize, _dtc: usize) -> ! {
 
     println!("I am virtual {:x?}!", riscv::register::satp::read());
 
-    thread::spawn(thread::process1, 0x8600_0000);
-    thread::spawn(thread::process2, 0x8400_0000);
+    // thread::spawn(thread::process1, 0x8600_0000);
+    // thread::spawn(thread::process2, 0x8400_0000);
 
     layout::print_kernel_layout();
 
@@ -40,9 +41,9 @@ fn main(_hart_id: usize, _dtc: usize) -> ! {
     thread::enable_threading();
 
     // let ppa = PhysicalPageAllocator::new(0x1000);
-    // 
+    //
     // set_global_physical_page_allocator(ppa);
-    // 
+    //
     // {
     //     let p = PhysicalPage::new();
     //     println!("{:x?}", p);

@@ -1,6 +1,8 @@
+use crate::user::UserProgram;
+use crate::user;
 use alloc::vec::Vec;
-use riscv::interrupt::{Exception, Interrupt, Trap};
 use riscv::interrupt::Interrupt::SupervisorTimer;
+use riscv::interrupt::{Exception, Interrupt, Trap};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec::Stvec;
 
@@ -61,6 +63,9 @@ struct Thread {
 static mut PROCESSES: Vec<Thread> = Vec::new();
 
 static mut CURRENT_THREAD: usize = 0;
+
+static mut NEXT_STACK: usize = 0x8000_0000;
+const MAX_STACK: usize = 0xA000_0000;
 
 #[export_name = "_handle_trap_rust"]
 extern "C" fn handle_trap(frame: &mut TrapFrame) {
@@ -124,60 +129,7 @@ extern "C" fn handle_trap(frame: &mut TrapFrame) {
     // Trap::from(cause);
 }
 
-pub fn process1() -> ! {
-    loop {
-        println!("Process1 1");
-        for _ in 1..5_000 {}
-        println!("Process1 2");
-        for _ in 1..5_000 {}
-        println!("Process1 3");
-        for _ in 1..5_000 {}
-        println!("Process1 4");
-        for _ in 1..5_000 {}
-        println!("Process1 5");
-        for _ in 1..5_000 {}
-        println!("Process1 6");
-        for _ in 1..5_000 {}
-    }
-}
-
-pub fn process2() -> ! {
-    loop {
-        println!("Process2 1");
-        for _ in 1..5_000 {}
-        println!("Process2 2");
-        for _ in 1..5_000 {}
-        println!("Process2 3");
-        for _ in 1..5_000 {}
-        println!("Process2 4");
-        for _ in 1..5_000 {}
-        println!("Process2 5");
-        for _ in 1..5_000 {}
-        println!("Process2 6");
-        for _ in 1..5_000 {}
-
-        // spawn(process3, 0x8500_0000)
-    }
-}
-
-pub fn process3() -> ! {
-    loop {
-        println!("Process3 1");
-        for _ in 1..5_000_000 {}
-        println!("Process3 2");
-        for _ in 1..5_000_000 {}
-        println!("Process3 3");
-        for _ in 1..5_000_000 {}
-        println!("Process3 4");
-        for _ in 1..5_000_000 {}
-        println!("Process3 5");
-        for _ in 1..5_000_000 {}
-        println!("Process3 6");
-        for _ in 1..5_000_000 {}
-    }
-}
-
-pub fn spawn(f: fn() -> !, sp: usize) {
+pub fn spawn(f: /*extern "C"*/ fn() -> !, sp: usize) {
     unsafe {
         let thread = Thread {
             id: PROCESSES.len() + 1,
@@ -185,6 +137,21 @@ pub fn spawn(f: fn() -> !, sp: usize) {
         };
 
         PROCESSES.push(thread);
+    }
+}
+
+pub fn spawn_user_program(prog: &UserProgram) {
+    let stack_end;
+    unsafe {
+        stack_end = NEXT_STACK + prog.stack_size;
+        if stack_end > MAX_STACK {
+            panic!("Stack area is exceeded");
+        }
+        NEXT_STACK = stack_end;
+    }
+    spawn(user::crt0, stack_end);
+    unsafe {
+        PROCESSES.last_mut().unwrap().frame.a0 = prog.entry as usize;
     }
 }
 
@@ -207,6 +174,10 @@ pub fn setup_threads() {
 
     unsafe {
         PROCESSES.push(pr0);
+    }
+
+    for prog in user::USER_PROGRAMS {
+        spawn_user_program(prog);
     }
 }
 
