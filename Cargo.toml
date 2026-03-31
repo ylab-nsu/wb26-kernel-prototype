@@ -1,24 +1,14 @@
-[package]
-name = "risc-v-rust-bare-metal"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = [
+    "kernel",
+    "user-processes",
+]
+default-members = ["kernel"]
+resolver = "2"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[profile.dev]
+panic = "abort"
 
-[[bin]]
-name = "risc-v-rust-bare-metal"
-path = "src/main.rs"
-test = false
-doctest = false
-bench = false
-
-
-[dependencies]
-#spin = "0.10.0"
-#talc = { version = "4.4.3", default-features = false, features = ["lock_api"] }
-
-sbi = "0.3.0"
-riscv = { version = "0.15.0", features = ["s-mode", "critical-section-single-hart"] }
-#riscv-rt = { version = "0.16.0", features = ["s-mode", "single-hart"] }
-embedded-alloc = { version = "0.6.0" }
-fdt-rs = { version = "0.4.5", default-features = false}
+[profile.release]
+panic = "abort"
+lto = true

@@ -1,5 +1,3 @@
-use crate::user::UserProgram;
-use crate::user;
 use alloc::vec::Vec;
 use riscv::interrupt::Interrupt::SupervisorTimer;
 use riscv::interrupt::{Exception, Interrupt, Trap};
@@ -129,7 +127,7 @@ extern "C" fn handle_trap(frame: &mut TrapFrame) {
     // Trap::from(cause);
 }
 
-pub fn spawn(f: /*extern "C"*/ fn() -> !, sp: usize) {
+pub fn spawn(f: extern "C" fn() -> !, sp: usize) {
     unsafe {
         let thread = Thread {
             id: PROCESSES.len() + 1,
@@ -140,6 +138,27 @@ pub fn spawn(f: /*extern "C"*/ fn() -> !, sp: usize) {
     }
 }
 
+pub struct UserProgram {
+    pub entry: extern "C" fn(),
+    pub stack_size: usize,
+}
+
+unsafe extern "C" {
+    safe fn user1();
+    safe fn process1();
+    safe fn process2();
+    safe fn process3();
+    safe fn crt0() -> !;
+}
+
+pub const USER_PROGRAMS: &[UserProgram] = &[
+    UserProgram{entry: user1, stack_size:1024*1024},
+    UserProgram{entry: process1, stack_size:1024*1024},
+    UserProgram{entry: process2, stack_size:1024*1024},
+    UserProgram{entry: process3, stack_size:1024*1024},
+];
+
+
 pub fn spawn_user_program(prog: &UserProgram) {
     let stack_end;
     unsafe {
@@ -149,7 +168,7 @@ pub fn spawn_user_program(prog: &UserProgram) {
         }
         NEXT_STACK = stack_end;
     }
-    spawn(user::crt0, stack_end);
+    spawn(crt0, stack_end);
     unsafe {
         PROCESSES.last_mut().unwrap().frame.a0 = prog.entry as usize;
     }
@@ -176,7 +195,7 @@ pub fn setup_threads() {
         PROCESSES.push(pr0);
     }
 
-    for prog in user::USER_PROGRAMS {
+    for prog in USER_PROGRAMS {
         spawn_user_program(prog);
     }
 }

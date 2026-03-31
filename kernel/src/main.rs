@@ -11,7 +11,6 @@ mod print;
 mod thread;
 mod layout;
 mod device_tree;
-mod user;
 
 use core::any::Any;
 use core::arch::asm;
@@ -31,9 +30,6 @@ fn main(_hart_id: usize, _dtc: usize) -> ! {
     // device_tree::handle_device_tree(_dtc);
 
     println!("I am virtual {:x?}!", riscv::register::satp::read());
-
-    // thread::spawn(thread::process1, 0x8600_0000);
-    // thread::spawn(thread::process2, 0x8400_0000);
 
     layout::print_kernel_layout();
 

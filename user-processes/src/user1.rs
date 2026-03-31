@@ -1,5 +1,5 @@
-#[no_mangle]
-pub extern "C" fn main() {
+#[export_name="user1"]
+pub extern "C" fn user1() {
     println!("Hello, world!");
     let mut a = 0i64;
     for _ in 0i64..20000000 {

@@ -1,3 +1,4 @@
+#[export_name="process1"]
 pub extern "C" fn process1() {
     loop {
         println!("Process1 1");
@@ -15,6 +16,7 @@ pub extern "C" fn process1() {
     }
 }
 
+#[export_name="process2"]
 pub extern "C" fn process2() {
     loop {
         println!("Process2 1");
@@ -34,6 +36,7 @@ pub extern "C" fn process2() {
     }
 }
 
+#[export_name="process3"]
 pub extern "C" fn process3() {
     loop {
         println!("Process3 1");
