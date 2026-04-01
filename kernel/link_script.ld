@@ -128,7 +128,6 @@ SECTIONS
 
     . = ALIGN(4);
     __etext = .;
-    __zalupa = .;
   }
 
   .rodata ALIGN(PAGE_SIZE) : AT(ADDR(.rodata) - KERNEL_VA_OFFSET)

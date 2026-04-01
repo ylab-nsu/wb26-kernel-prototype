@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "kernel",
-    "user-processes",
+    "user-programs",
 ]
 default-members = ["kernel"]
 resolver = "2"
