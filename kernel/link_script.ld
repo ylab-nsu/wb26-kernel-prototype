@@ -82,9 +82,23 @@ PROVIDE(_heap_size = 0); */
 
 ENTRY(__init__mmu)
 
-KERNEL_LMA = 0x82000000;
-KERNEL_VMA = 0xffffffff82000000;
+TRAMPOLINE_LMA = 0x82000000;
+
+KERNEL_LMA = 0x83000000;
+KERNEL_VMA = 0xffffffff83000000;
 KERNEL_VA_OFFSET = KERNEL_VMA - KERNEL_LMA;
+
+USER_LMA = 0x85000000;
+USER_VMA = 0x45000000;
+USER_VA_OFFSET = USER_VMA - USER_LMA;
+
+MEMORY
+{
+    TRAMPOLINE_REGION : ORIGIN = TRAMPOLINE_LMA, LENGTH = 16M
+    KERNEL_REGION : ORIGIN = KERNEL_VMA, LENGTH = 32M
+    USER_REGION   : ORIGIN = USER_VMA, LENGTH = 48M
+}
+
 
 PAGE_SIZE = 4096;
 
@@ -94,7 +108,6 @@ STACK_PAGES = 1;
 
 SECTIONS
 {
-  . = KERNEL_LMA;
 
   .trampoline ALIGN(PAGE_SIZE) :
   {
@@ -102,10 +115,109 @@ SECTIONS
 
     . = ALIGN(PAGE_SIZE);
     KEEP(*(.trampoline.root_table));
-  }
+  } > TRAMPOLINE_REGION
 
   __kernel_va_offset = KERNEL_VA_OFFSET;
-  . += KERNEL_VA_OFFSET;
+
+
+
+
+
+  .user.text ALIGN(PAGE_SIZE) : AT(ADDR(.user.text) - USER_VA_OFFSET)
+  {
+    __sutext = .;
+    /* *(.text.abort); */
+    *libuser_programs.a:(.text .text.*);
+
+    . = ALIGN(4);
+    __eutext = .;
+  } > USER_REGION
+
+  .user.rodata ALIGN(PAGE_SIZE) : AT(ADDR(.user.rodata) - USER_VA_OFFSET)
+  {
+     . = ALIGN(4);
+    __surodata = .;
+
+    /* *(.srodata .srodata.*); */
+    *libuser_programs.a:(.rodata .rodata.*);
+
+    . = ALIGN(8);
+    /* KEEP(*(.rodata.kernel_layout)); */
+
+    /* 8-byte align the end (VMA) of this section.
+       This is required by LLD to ensure the LMA of the following .data
+       section will have the correct alignment. */
+    . = ALIGN(8);
+    __eurodata = .;
+  } > USER_REGION
+
+  .user.data ALIGN(PAGE_SIZE) : AT(ADDR(.user.data) - USER_VA_OFFSET)
+  {
+    . = ALIGN(8);
+    __sudata = .;
+
+    /* Must be called __global_pointer$ for linker relaxations to work. */
+    /* PROVIDE(__global_pointer$ = . + 0x800); */
+    /* *(.sdata .sdata.* .sdata2 .sdata2.*); */
+    *libuser_programs.a:(.data .data.*);
+
+    . = ALIGN(8);
+    __eudata = .;
+  } > USER_REGION
+
+
+  /* LMA of .data */
+  /* __suidata = LOADADDR(.data); */
+
+  .user.bss ALIGN(PAGE_SIZE) (NOLOAD) : AT(ADDR(.user.bss) - USER_VA_OFFSET)
+  {
+    . = ALIGN(8);
+    __subss = .;
+
+    *libuser_programs.a:(/* .sbss .sbss.* */ .bss .bss.*);
+    __eubss = .;
+  } > USER_REGION
+
+  /* Uninitialized data segment. In contrast with .bss, .uninit is not initialized to zero by
+   * the runtime, and might contain residual data from previous executions or random values
+   * if not explicitly initialized. While .bss and .uninit are different sections, they are
+   * both allocated at REGION_BSS, as their purpose is similar. */
+  .user.uninit ALIGN(PAGE_SIZE) (NOLOAD) : AT(ADDR(.user.uninit) - USER_VA_OFFSET)
+  {
+    . = ALIGN(8);
+    __suuninit = .;
+    *libuser_programs.a:(.uninit);
+    . = ALIGN(8);
+    __euuninit = .;
+  } > USER_REGION
+
+  /* fictitious region that represents the memory available for the heap */
+  .user.heap ALIGN(PAGE_SIZE) (NOLOAD) : AT(ADDR(.user.heap) - USER_VA_OFFSET)
+  {
+    __suheap = .;
+    /* . += _heap_size; */
+    . += PAGE_SIZE * HEAP_PAGES;
+    . = ALIGN(4);
+    __euheap = .;
+  } > USER_REGION
+
+  /* fictitious region that represents the memory available for the stack */
+  .user.stack ALIGN(PAGE_SIZE) (NOLOAD) : AT(ADDR(.user.stack) - USER_VA_OFFSET)
+  {
+    /* Page for stack protection */
+    . = ALIGN(PAGE_SIZE);
+    . += PAGE_SIZE * 10;
+    __eustack = .;
+    . += PAGE_SIZE * STACK_PAGES;
+    /* . = ABSOLUTE(_stack_start); */
+    __sustack = .;
+  } > USER_REGION
+
+
+
+
+
+
 
   .text ALIGN(PAGE_SIZE) : AT(ADDR(.text) - KERNEL_VA_OFFSET)
   {
@@ -113,40 +225,42 @@ SECTIONS
 
     /* Put reset handler first in .text section so it ends up as the entry */
     /* point of the program. */
-    KEEP(*(.init));
+    KEEP(*(EXCLUDE_FILE(*libuser_programs.a) .init));
     
     . = ALIGN(4);
-    KEEP(*(.trap.vector));   /* for _trap_vector (vectored mode only) */
-    KEEP(*(.trap.start));    /* for _start_trap routine */
-    KEEP(*(.trap.start.*));  /* for _start_INTERRUPT_trap routines (vectored mode only) */
-    KEEP(*(.trap.continue)); /* for _continue_trap routine (vectored mode only) */
-    KEEP(*(.trap.rust));     /* for _start_trap_rust Rust function */
-    KEEP(*(.trap .trap.*));  /* Other .trap symbols at the end */
+    
+    /* Probably not needed */
+    KEEP(*(EXCLUDE_FILE(*libuser_programs.a) .trap.vector));   /* for _trap_vector (vectored mode only) */
+    KEEP(*(EXCLUDE_FILE(*libuser_programs.a) .trap.start));    /* for _start_trap routine */
+    KEEP(*(EXCLUDE_FILE(*libuser_programs.a) .trap.start.*));  /* for _start_INTERRUPT_trap routines (vectored mode only) */
+    KEEP(*(EXCLUDE_FILE(*libuser_programs.a) .trap.continue)); /* for _continue_trap routine (vectored mode only) */
+    KEEP(*(EXCLUDE_FILE(*libuser_programs.a) .trap.rust));     /* for _start_trap_rust Rust function */
+    KEEP(*(EXCLUDE_FILE(*libuser_programs.a) .trap .trap.*));  /* Other .trap symbols at the end */
 
-    *(.text.abort);
+    /* *(EXCLUDE_FILE(*libuser_programs.a) .text.abort); */
     *(.text .text.*);
 
     . = ALIGN(4);
     __etext = .;
-  }
+  } > KERNEL_REGION
 
   .rodata ALIGN(PAGE_SIZE) : AT(ADDR(.rodata) - KERNEL_VA_OFFSET)
   {
      . = ALIGN(4);
     __srodata = .;
 
-    *(.srodata .srodata.*);
-    *(.rodata .rodata.*);
+    /* *(EXCLUDE_FILE(*libuser_programs.a) .srodata .srodata.*); */
+    *(EXCLUDE_FILE(*libuser_programs.a) .rodata .rodata.*);
 
     . = ALIGN(8);
-    KEEP(*(.rodata.kernel_layout));
+    /* KEEP(*(.rodata.kernel_layout)); */
 
     /* 8-byte align the end (VMA) of this section.
        This is required by LLD to ensure the LMA of the following .data
        section will have the correct alignment. */
     . = ALIGN(8);
     __erodata = .;
-  }
+  } > KERNEL_REGION
 
   .data ALIGN(PAGE_SIZE) : AT(ADDR(.data) - KERNEL_VA_OFFSET)
   {
@@ -155,17 +269,14 @@ SECTIONS
 
     /* Must be called __global_pointer$ for linker relaxations to work. */
     PROVIDE(__global_pointer$ = . + 0x800);
-    *(.sdata .sdata.* .sdata2 .sdata2.*);
+    /* *(EXCLUDE_FILE(*libuser_programs.a) .sdata .sdata.* .sdata2 .sdata2.*); */
     *(.data .data.*);
 
-  }
-  
-  /* Allow sections from user `memory.x` injected using `INSERT AFTER .data` to
-   * use the .data loading mechanism by pushing __edata. Note: do not change
-   * output region or load region in those user sections! */
-  . = ALIGN(8);
-  __edata = .;
-  
+    . = ALIGN(8);
+    __edata = .;
+  } > KERNEL_REGION
+
+
   /* LMA of .data */
   /* __sidata = LOADADDR(.data); */
 
@@ -174,14 +285,9 @@ SECTIONS
     . = ALIGN(8);
     __sbss = .;
 
-    *(.sbss .sbss.* .bss .bss.*);
-  }
-
-  /* Allow sections from user `memory.x` injected using `INSERT AFTER .bss` to
-   * use the .bss zeroing mechanism by pushing __ebss. Note: do not change
-   * output region or load region in those user sections! */
-  . = ALIGN(8);
-  __ebss = .;
+    *(EXCLUDE_FILE(*libuser_programs.a) /* .sbss .sbss.* */ .bss .bss.*);
+    __ebss = .;
+  } > KERNEL_REGION
 
   /* Uninitialized data segment. In contrast with .bss, .uninit is not initialized to zero by
    * the runtime, and might contain residual data from previous executions or random values
@@ -191,10 +297,10 @@ SECTIONS
   {
     . = ALIGN(8);
     __suninit = .;
-    *(.uninit .uninit.*);
+    *(EXCLUDE_FILE(*libuser_programs.a) .uninit);
     . = ALIGN(8);
     __euninit = .;
-  }
+  } > KERNEL_REGION
 
   /* fictitious region that represents the memory available for the heap */
   .heap ALIGN(PAGE_SIZE) (NOLOAD) : AT(ADDR(.heap) - KERNEL_VA_OFFSET)
@@ -204,7 +310,7 @@ SECTIONS
     . += PAGE_SIZE * HEAP_PAGES;
     . = ALIGN(4);
     __eheap = .;
-  }
+  } > KERNEL_REGION
 
   /* fictitious region that represents the memory available for page pool */
   .page_pool ALIGN(PAGE_SIZE) (NOLOAD) : AT(ADDR(.page_pool) - KERNEL_VA_OFFSET)
@@ -213,20 +319,30 @@ SECTIONS
     . += PAGE_SIZE * PAGE_POOL_PAGES;
     . = ALIGN(4);
     __epage_pool = .;
-  }
-
-  /* Page for stack protection */
-  . = ALIGN(PAGE_SIZE);
-  . += PAGE_SIZE;
+  } > KERNEL_REGION
 
   /* fictitious region that represents the memory available for the stack */
   .stack ALIGN(PAGE_SIZE) (NOLOAD) : AT(ADDR(.stack) - KERNEL_VA_OFFSET)
   {
+    /* Page for stack protection */
+    . = ALIGN(PAGE_SIZE);
+    . += PAGE_SIZE * 10;
     __estack = .;
     . += PAGE_SIZE * STACK_PAGES;
     /* . = ABSOLUTE(_stack_start); */
     __sstack = .;
-  }
+  } > KERNEL_REGION
+
+
+
+
+
+
+  
+
+
+
+
 
   /* fake output .got section */
   /* Dynamic relocations are unsupported. This section is only used to detect
@@ -235,7 +351,7 @@ SECTIONS
   .got (INFO) :
   {
     KEEP(*(.got .got.*));
-  }
+  } > KERNEL_REGION
 }
 
 /* Do not exceed this mark in the error messages above                                    | */

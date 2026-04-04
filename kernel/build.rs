@@ -1,3 +1,4 @@
+use llvm_tools::LlvmTools;
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
@@ -9,13 +10,23 @@ fn main() {
     let workspace_root = manifest_dir.parent().unwrap();
     let target = env::var("TARGET").unwrap();
 
+    let llvm_tools = LlvmTools::new().expect("failed to find llvm-tools");
+    let objcopy = llvm_tools
+        .tool(&llvm_tools::exe("llvm-objcopy"))
+        .expect("llvm-objcopy not found in llvm-tools");
+
     let link_script = manifest_dir.join("link_script.ld");
     println!("cargo:rustc-link-arg=-T{}", link_script.display());
-    println!("cargo:rustc-link-arg=--allow-multiple-definition");
     println!("cargo:rerun-if-changed=link_script.ld");
 
     let user_target_dir = &workspace_root.join("target").join(USER_PACKAGE);
-    let mut user_cargo_args = vec!["build", "--package", USER_PACKAGE, "--target", &target];
+    let mut user_cargo_args = vec![
+        "build",
+        "--package",
+        USER_PACKAGE,
+        "--target",
+        &target
+    ];
 
     let profile = env::var("PROFILE").unwrap();
     match profile.as_str() {
@@ -27,22 +38,50 @@ fn main() {
     }
 
     let status = Command::new("cargo")
-        .args(user_cargo_args)
+        .args(&user_cargo_args)
         .env("CARGO_TARGET_DIR", &user_target_dir)
         .status();
-
     if status.is_err() || !status.unwrap().success() {
         panic!("Failed to build {USER_PACKAGE} package");
     }
 
-    let workspace_root = manifest_dir.parent().unwrap();
-    let app_elf = workspace_root
+    let user_elf = workspace_root
         .join(user_target_dir)
         .join(&target)
         .join(profile)
         .join(format!("lib{}.a", USER_PACKAGE.replace("-", "_")));
+    println!("cargo:rerun-if-changed={}", user_elf.to_str().unwrap());
 
-    println!("cargo:rustc-link-arg={}", app_elf.display());
+    // let status = Command::new(objcopy)
+    //     .args(&[
+    //         "--redefine-sym", "_RNvCshXwFllX56pT_7___rustc17rust_begin_unwind=user_rust_begin_unwind",
+    //         // "--redefine-sym", "rust_panic=__user_rust_panic",
+    //         user_elf.to_str().unwrap(),
+    //         // user_elf.with_added_extension("_changed").to_str().unwrap(),
+    //     ])
+    //     .status();
+    // let status = Command::new(objcopy)
+    //     .args(&[
+    //         "--prefix-symbols",
+    //         "__user_",
+    //         user_elf.to_str().unwrap(),
+    //         user_elf.to_str().unwrap(),
+    //     ])
+    //     .status();
+    let status = Command::new(objcopy)
+        .args(&[
+            "--remove-section=.eh_frame",
+            // "--remove-section=.note.*",
+            "--prefix-symbols=__user_",
+            user_elf.to_str().unwrap(),
+            user_elf.to_str().unwrap(),
+        ])
+        .status();
+    if status.is_err() || !status.unwrap().success() {
+        panic!("Failed rename symbols");
+    }
+
+    println!("cargo:rustc-link-arg={}", user_elf.to_str().unwrap());
     println!("cargo:rerun-if-changed=../{USER_PACKAGE}",);
     println!("cargo:rerun-if-changed=build.rs");
 }

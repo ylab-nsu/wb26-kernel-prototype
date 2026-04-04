@@ -20,7 +20,7 @@ pub fn crt0() -> ! {
         );
     }
     main();
-    // println!("Main terminated");
+    println!("Main terminated");
     loop {riscv::asm::wfi()} // No exit() for now
 }
 

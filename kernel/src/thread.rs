@@ -142,16 +142,28 @@ pub struct UserProgram {
     pub entry: extern "C" fn(),
     pub stack_size: usize,
 }
+pub struct UserProgram2 {
+    pub entry: extern "C" fn() -> !,
+    pub stack_size: usize,
+}
 
 unsafe extern "C" {
+    #[link_name = "__user_user1"]
     safe fn user1();
+    #[link_name = "__user_process1"]
     safe fn process1();
+    #[link_name = "__user_process2"]
     safe fn process2();
+    #[link_name = "__user_process3"]
     safe fn process3();
+    #[link_name = "__user_crt0"]
     safe fn crt0() -> !;
 }
 
-pub const USER_PROGRAMS: &[UserProgram] = &[
+// const CRT0: extern "C" fn() -> ! = _crt0;
+const CRT0: &[UserProgram2] = &[UserProgram2{entry: crt0, stack_size: 0}];
+
+const USER_PROGRAMS: &[UserProgram] = &[
     UserProgram{entry: user1, stack_size:1024*1024},
     UserProgram{entry: process1, stack_size:1024*1024},
     UserProgram{entry: process2, stack_size:1024*1024},
@@ -168,7 +180,8 @@ pub fn spawn_user_program(prog: &UserProgram) {
         }
         NEXT_STACK = stack_end;
     }
-    spawn(crt0, stack_end);
+    // spawn(USER_PROGRAMS[0].entry, stack_end);
+    spawn(CRT0[0].entry, stack_end);
     unsafe {
         PROCESSES.last_mut().unwrap().frame.a0 = prog.entry as usize;
     }

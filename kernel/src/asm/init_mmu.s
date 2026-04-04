@@ -20,19 +20,9 @@ __init__mmu:
     PTE_VALUE t1, 0x80000000, 0b1111
     PTE_SET_CENTER 2, t0, t1
     PTE_SET_CENTER 510, t0, t1
-    # li t1, ((0x80000000 >> 12) << 10) | 0b1111
-    # sd t1, PTE_OFF_CENTER(510) (t0)
 
-    # Store PTE
-    # la t0, __root_mmu_table + (510 * 8)
-    # li t1, 0x2000000f
-    # sd t1, 0(t0)
+    PTE_SET_CENTER 1, t0, t1
 
-    # la t0, __root_mmu_table + (2 * 8)
-    # li t1, 0x2000000f
-    # sd t1, 0(t0)
-
-    # li t0, 0x8000000000000000 | (__root_mmu_table >> 12)
 
     li t0, 2 << 62 
     # li t0, 0x8000000000000000
