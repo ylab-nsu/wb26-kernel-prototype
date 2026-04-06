@@ -3,6 +3,7 @@ use riscv::interrupt::Interrupt::SupervisorTimer;
 use riscv::interrupt::{Exception, Interrupt, Trap};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec::Stvec;
+use crate::mmu::set_satp;
 
 #[repr(C)]
 #[derive(Debug, Default, Clone)]
@@ -62,8 +63,8 @@ static mut PROCESSES: Vec<Thread> = Vec::new();
 
 static mut CURRENT_THREAD: usize = 0;
 
-static mut NEXT_STACK: usize = 0x8000_0000;
-const MAX_STACK: usize = 0xA000_0000;
+static mut NEXT_STACK: usize = 0x47000000;
+const MAX_STACK: usize = 0x48000000;
 
 #[export_name = "_handle_trap_rust"]
 extern "C" fn handle_trap(frame: &mut TrapFrame) {
@@ -102,7 +103,11 @@ extern "C" fn handle_trap(frame: &mut TrapFrame) {
     curr.frame = frame.clone();
     *frame = next.frame.clone();
 
-    unsafe { CURRENT_THREAD = next_thread }
+    unsafe {
+        CURRENT_THREAD = next_thread;
+        riscv::register::sstatus::set_spp(riscv::register::sstatus::SPP::User);
+        set_satp(1);
+    };
 
     match x {
         Trap::Exception(cause) => {
@@ -161,15 +166,29 @@ unsafe extern "C" {
 }
 
 // const CRT0: extern "C" fn() -> ! = _crt0;
-const CRT0: &[UserProgram2] = &[UserProgram2{entry: crt0, stack_size: 0}];
+const CRT0: &[UserProgram2] = &[UserProgram2 {
+    entry: crt0,
+    stack_size: 0,
+}];
 
 const USER_PROGRAMS: &[UserProgram] = &[
-    UserProgram{entry: user1, stack_size:1024*1024},
-    UserProgram{entry: process1, stack_size:1024*1024},
-    UserProgram{entry: process2, stack_size:1024*1024},
-    UserProgram{entry: process3, stack_size:1024*1024},
+    UserProgram {
+        entry: user1,
+        stack_size: 64 * 1024,
+    },
+    UserProgram {
+        entry: process1,
+        stack_size: 64 * 1024,
+    },
+    UserProgram {
+        entry: process2,
+        stack_size: 64 * 1024,
+    },
+    UserProgram {
+        entry: process3,
+        stack_size: 64 * 1024,
+    },
 ];
-
 
 pub fn spawn_user_program(prog: &UserProgram) {
     let stack_end;
@@ -208,6 +227,16 @@ pub fn setup_threads() {
         PROCESSES.push(pr0);
     }
 
+    // Doesn't work
+    // extern "C" {
+    //     static __eustack: usize;
+    //     static __sustack: usize;
+    // }
+    //
+    // unsafe {
+    //     NEXT_STACK = addr_of!(__eustack) as usize;
+    //     MAX_STACK = addr_of!(__sustack) as usize;
+    // }
     for prog in USER_PROGRAMS {
         spawn_user_program(prog);
     }

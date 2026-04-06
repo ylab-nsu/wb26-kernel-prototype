@@ -11,3 +11,5 @@ __kernel_layout:
     .dword __edata
     .dword __sbss
     .dword __ebss
+    .dword __spage_pool
+    .dword __epage_pool

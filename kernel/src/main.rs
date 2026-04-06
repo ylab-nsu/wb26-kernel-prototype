@@ -11,6 +11,7 @@ mod print;
 mod thread;
 mod layout;
 mod device_tree;
+mod mmu;
 
 use core::any::Any;
 use core::arch::asm;
@@ -25,6 +26,7 @@ use fdt_rs::prelude::FallibleIterator;
 fn main(_hart_id: usize, _dtc: usize) -> ! {
     println!("Initializing heap...");
     heap::init_heap();
+    mmu::init_mmu();
     thread::setup_trap();
     thread::setup_threads();
     // device_tree::handle_device_tree(_dtc);

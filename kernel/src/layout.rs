@@ -1,20 +1,22 @@
 #[repr(C)]
 #[derive(Debug)]
-struct KernelLayout {
-    kernel_va_offset: usize,
-    stext: usize,
-    etext: usize,
-    srodata: usize,
-    erodata: usize,
-    sdata: usize,
-    edata: usize,
-    sbss: usize,
-    ebss: usize,
+pub struct KernelLayout {
+    pub kernel_va_offset: usize,
+    pub stext: usize,
+    pub etext: usize,
+    pub srodata: usize,
+    pub erodata: usize,
+    pub sdata: usize,
+    pub edata: usize,
+    pub sbss: usize,
+    pub ebss: usize,
+    pub spage_pool: usize,
+    pub epage_pool: usize,
 }
 
 extern "C" {
     #[link_name = "__kernel_layout"]
-    static kernel_layout: KernelLayout;
+    pub static kernel_layout: KernelLayout;
 }
 
 unsafe fn print(name: &str, start: usize, end: usize) {
