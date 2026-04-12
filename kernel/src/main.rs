@@ -3,7 +3,6 @@
 
 #[macro_use]
 extern crate alloc;
-mod asm;
 mod heap;
 mod paging;
 #[macro_use]
