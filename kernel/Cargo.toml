@@ -17,6 +17,9 @@ bench = false
 #spin = "0.10.0"
 #talc = { version = "4.4.3", default-features = false, features = ["lock_api"] }
 
+cfg-if = "1.0.4"
+static_assertions = "1.1.0"
+
 sbi = "0.3.0"
 riscv = { version = "0.15.0", features = ["s-mode", "critical-section-single-hart"] }
 #riscv-rt = { version = "0.16.0", features = ["s-mode", "single-hart"] }

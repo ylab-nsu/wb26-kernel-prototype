@@ -12,15 +12,14 @@ mod thread;
 mod layout;
 mod device_tree;
 mod mmu;
+mod arch;
 
-use core::any::Any;
+pub mod vm;
+
 use core::arch::asm;
-use core::fmt::Write;
-use core::ops::{Deref, DerefMut, Index};
 use core::panic::PanicInfo;
 
 // use crate::paging::alloc::{set_global_physical_page_allocator, PhysicalPage, PhysicalPageAllocator};
-use fdt_rs::prelude::FallibleIterator;
 
 #[export_name = "_main"]
 fn main(_hart_id: usize, _dtc: usize) -> ! {
