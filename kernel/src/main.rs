@@ -3,10 +3,12 @@
 
 #[macro_use]
 extern crate alloc;
-mod heap;
-mod paging;
+
 #[macro_use]
 mod print;
+
+mod heap;
+mod paging;
 mod thread;
 mod layout;
 mod device_tree;

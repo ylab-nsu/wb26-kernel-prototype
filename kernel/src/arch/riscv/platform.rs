@@ -1,16 +1,10 @@
-use crate::arch::{riscv::write::MyPrinter, traits::TargetPlatform};
+use crate::arch::traits::TargetPlatform;
 
 pub struct RiscvPlatform;
 
 impl TargetPlatform for RiscvPlatform {
-    type PlatformWriter = MyPrinter;
-
     fn init() {
         todo!()
-    }
-
-    fn get_writer() -> impl core::fmt::Write {
-        MyPrinter
     }
 
     fn ipi() {

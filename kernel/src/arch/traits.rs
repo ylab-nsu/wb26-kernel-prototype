@@ -1,12 +1,7 @@
-use core::fmt::Write;
-
 use crate::vm::{MapperError, Mapping, MappingFlags};
 
 pub trait TargetPlatform {
-    type PlatformWriter;
-
     fn init();
-    fn get_writer() -> impl Write;
     fn ipi();
     fn sleep();
     fn shutdown();
