@@ -31,6 +31,7 @@ fn pte_value(addr: usize, flags: usize) -> usize {
 
 pub fn init_mmu() {
     unsafe {
+        riscv::register::sstatus::set_sum();
         let kernel_pa = pte_value(0x80000000, 0b101111);
         MMU_TABLE[0].0[510] = kernel_pa;
         MMU_TABLE[1].0[510] = kernel_pa;

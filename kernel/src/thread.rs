@@ -66,17 +66,12 @@ static mut CURRENT_THREAD: usize = 0;
 static mut NEXT_STACK: usize = 0x47000000;
 const MAX_STACK: usize = 0x48000000;
 
-#[export_name = "_handle_trap_rust"]
-extern "C" fn handle_trap(frame: &mut TrapFrame) {
-    // println!("Current SP: {:p}", frame);
 
+fn reschedule(frame: &mut TrapFrame) {
     let time = riscv::register::time::read64();
     sbi::timer::set_timer(time + 10_000_000).expect("Can't set timer");
     // sbi::timer::set_timer(time + 1_000).expect("Can't set timer");
 
-    let x: Trap<Interrupt, Exception> = riscv::register::scause::read().cause().try_into().unwrap();
-
-    println!("Cause: {x:?}");
 
     let next_thread = unsafe {
         if CURRENT_THREAD < PROCESSES.len() - 1 {
@@ -108,28 +103,54 @@ extern "C" fn handle_trap(frame: &mut TrapFrame) {
         riscv::register::sstatus::set_spp(riscv::register::sstatus::SPP::User);
         set_satp(1);
     };
+}
+
+#[export_name = "_handle_trap_rust"]
+extern "C" fn handle_trap(frame: &mut TrapFrame) {
+    // println!("Current SP: {:p}", frame);
+    let x: Trap<Interrupt, Exception> = riscv::register::scause::read().cause().try_into().unwrap();
+    println!("Cause: {x:?}");
 
     match x {
-        Trap::Exception(cause) => {
-            println!("exception:{cause:?}");
-            match cause {
-                Exception::InstructionFault => {
-                    sbi::timer::set_timer(u64::MAX).expect("Can't set timer");
-                    let epc = unsafe { riscv::register::sepc::read() };
-                    panic!("InstructionFault {epc:x} {}", curr.frame.pc);
+        Trap::Interrupt(Interrupt::SupervisorTimer) => {
+            reschedule(frame);
+        }
+
+        Trap::Exception(Exception::UserEnvCall) => {
+            if (frame.a6 == 0) {
+                println!("Received non-SBI UserEnvCall");
+            } else {
+                println!("    Redirecting UserEnvCall to SBI");
+                unsafe {
+                    core::arch::asm!(
+                        "ecall",
+                        inlateout("a0") frame.a0 => frame.a0,
+                        inlateout("a1") frame.a1 => frame.a1,
+                        in("a2") frame.a2,
+                        in("a3") frame.a3,
+                        in("a4") frame.a4,
+                        in("a5") frame.a5,
+                        in("a6") frame.a6,
+                        in("a7") frame.a7,
+                    );
                 }
-                _ => {}
             }
+            frame.pc += 4;
         }
-        Trap::Interrupt(SupervisorTimer) => {
-            // println!("Yooohooo timer!!!!");
+
+        Trap::Exception(Exception::InstructionFault) => {
+            sbi::timer::set_timer(u64::MAX).expect("Can't set timer");
+            let epc = unsafe { riscv::register::sepc::read() };
+            panic!("InstructionFault {epc:x} {}", frame.pc);
         }
+
         Trap::Interrupt(cause) => {
             println!("interrupt:{cause:?}");
         }
+        Trap::Exception(cause) => {
+            println!("exception:{cause:?}");
+        }
     }
-
-    // Trap::from(cause);
 }
 
 pub fn spawn(f: extern "C" fn() -> !, sp: usize) {
