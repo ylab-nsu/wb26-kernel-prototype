@@ -1,9 +1,9 @@
+use crate::mmu::set_satp;
 use alloc::vec::Vec;
 use riscv::interrupt::Interrupt::SupervisorTimer;
 use riscv::interrupt::{Exception, Interrupt, Trap};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec::Stvec;
-use crate::mmu::set_satp;
 
 #[repr(C)]
 #[derive(Debug, Default, Clone)]
@@ -66,12 +66,10 @@ static mut CURRENT_THREAD: usize = 0;
 static mut NEXT_STACK: usize = 0x47000000;
 const MAX_STACK: usize = 0x48000000;
 
-
 fn reschedule(frame: &mut TrapFrame) {
     let time = riscv::register::time::read64();
     sbi::timer::set_timer(time + 10_000_000).expect("Can't set timer");
     // sbi::timer::set_timer(time + 1_000).expect("Can't set timer");
-
 
     let next_thread = unsafe {
         if CURRENT_THREAD < PROCESSES.len() - 1 {

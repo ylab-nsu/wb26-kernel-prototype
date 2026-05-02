@@ -8,10 +8,11 @@ mod heap;
 mod paging;
 #[macro_use]
 mod print;
-mod thread;
-mod layout;
 mod device_tree;
+mod layout;
 mod mmu;
+mod page_pool;
+mod thread;
 
 use core::any::Any;
 use core::arch::asm;

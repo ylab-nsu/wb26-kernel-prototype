@@ -316,8 +316,7 @@ SECTIONS
   .page_pool ALIGN(PAGE_SIZE) (NOLOAD) : AT(ADDR(.page_pool) - KERNEL_VA_OFFSET)
   {
     __spage_pool = .;
-    . += PAGE_SIZE * PAGE_POOL_PAGES;
-    . = ALIGN(4);
+    KEEP(*(.page_pool));
     __epage_pool = .;
   } > KERNEL_REGION
 
@@ -338,7 +337,7 @@ SECTIONS
 
 
 
-  
+
 
 
 
