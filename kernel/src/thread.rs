@@ -1,6 +1,6 @@
 use crate::mmu::set_satp;
+use crate::page_pool::{Page, PAGE_POOL};
 use alloc::vec::Vec;
-use riscv::interrupt::Interrupt::SupervisorTimer;
 use riscv::interrupt::{Exception, Interrupt, Trap};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec::Stvec;
@@ -56,7 +56,27 @@ impl TrapFrame {
 
 struct Thread {
     id: usize,
-    frame: TrapFrame,
+    kernel_sp: usize,
+    frame: &'static mut TrapFrame,
+}
+
+impl Thread {
+    unsafe fn new(id: usize) -> Self {
+        let _left = &mut PAGE_POOL.kernel_stack_pages[id * 4] as *mut Page as usize;
+        let right = &mut PAGE_POOL.kernel_stack_pages[(id + 1) * 4] as *mut Page as usize;
+
+        let trap_frame_addr =
+            (right - size_of::<TrapFrame>()) / size_of::<TrapFrame>() * size_of::<TrapFrame>();
+        debug_assert!(trap_frame_addr != 0);
+        debug_assert!(trap_frame_addr % align_of::<TrapFrame>() == 0);
+        let trap_frame = trap_frame_addr as *mut TrapFrame;
+
+        Thread {
+            id,
+            kernel_sp: trap_frame_addr,
+            frame: &mut *trap_frame,
+        }
+    }
 }
 
 static mut PROCESSES: Vec<Thread> = Vec::new();
@@ -66,7 +86,8 @@ static mut CURRENT_THREAD: usize = 0;
 static mut NEXT_STACK: usize = 0x47000000;
 const MAX_STACK: usize = 0x48000000;
 
-fn reschedule(frame: &mut TrapFrame) {
+#[export_name = "_reschedule_rust"]
+fn reschedule(/*frame: &mut TrapFrame*/) -> *mut TrapFrame {
     let time = riscv::register::time::read64();
     sbi::timer::set_timer(time + 10_000_000).expect("Can't set timer");
     // sbi::timer::set_timer(time + 1_000).expect("Can't set timer");
@@ -79,7 +100,7 @@ fn reschedule(frame: &mut TrapFrame) {
         }
     };
 
-    let (curr, next) = unsafe {
+    let (_curr, next) = unsafe {
         let curr = PROCESSES.get_mut(CURRENT_THREAD).unwrap();
         let next = PROCESSES.get_mut(next_thread).unwrap();
 
@@ -88,30 +109,31 @@ fn reschedule(frame: &mut TrapFrame) {
         (curr, next)
     };
 
-    if frame.pc == 0 {
-        let epc = unsafe { riscv::register::sepc::read() };
-        println!("frame.pc is zero, epc={:x}", epc);
-    }
-
-    curr.frame = frame.clone();
-    *frame = next.frame.clone();
+    // if frame.pc == 0 {
+    //     let epc = unsafe { riscv::register::sepc::read() };
+    //     println!("frame.pc is zero, epc={:x}", epc);
+    // }
 
     unsafe {
         CURRENT_THREAD = next_thread;
         riscv::register::sstatus::set_spp(riscv::register::sstatus::SPP::User);
         set_satp(1);
     };
+
+    next.frame
 }
 
 #[export_name = "_handle_trap_rust"]
-extern "C" fn handle_trap(frame: &mut TrapFrame) {
+extern "C" fn handle_trap(frame: &mut TrapFrame) -> bool {
     // println!("Current SP: {:p}", frame);
     let x: Trap<Interrupt, Exception> = riscv::register::scause::read().cause().try_into().unwrap();
     println!("Cause: {x:?}");
 
+    let mut need_reschedule = false;
+
     match x {
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
-            reschedule(frame);
+            need_reschedule = true;
         }
 
         Trap::Exception(Exception::UserEnvCall) => {
@@ -149,15 +171,13 @@ extern "C" fn handle_trap(frame: &mut TrapFrame) {
             println!("exception:{cause:?}");
         }
     }
+    need_reschedule
 }
 
 pub fn spawn(f: extern "C" fn() -> !, sp: usize) {
     unsafe {
-        let thread = Thread {
-            id: PROCESSES.len() + 1,
-            frame: TrapFrame::default().with_pc(f as usize).with_sp(sp),
-        };
-
+        let thread = Thread::new(PROCESSES.len() + 1);
+        *thread.frame = TrapFrame::default().with_pc(f as usize).with_sp(sp);
         PROCESSES.push(thread);
     }
 }
@@ -237,25 +257,11 @@ pub fn setup_threads() {
     println!("Current time: {}", time);
     // sbi::timer::set_timer(time + 10_000_000).expect("Can't set timer");
 
-    let pr0 = Thread {
-        id: 0,
-        frame: TrapFrame::default(),
-    };
-
     unsafe {
+        let pr0 = Thread::new(0);
         PROCESSES.push(pr0);
     }
 
-    // Doesn't work
-    // extern "C" {
-    //     static __eustack: usize;
-    //     static __sustack: usize;
-    // }
-    //
-    // unsafe {
-    //     NEXT_STACK = addr_of!(__eustack) as usize;
-    //     MAX_STACK = addr_of!(__sustack) as usize;
-    // }
     for prog in USER_PROGRAMS {
         spawn_user_program(prog);
     }
@@ -264,7 +270,7 @@ pub fn setup_threads() {
 pub fn enable_threading() {
     unsafe {
         riscv::interrupt::enable();
-        riscv::interrupt::enable_interrupt(SupervisorTimer);
+        riscv::interrupt::enable_interrupt(Interrupt::SupervisorTimer);
         // riscv::register::sie::set_stimer();
     };
 }

@@ -1,5 +1,5 @@
 const MMU_PAGES: usize = 16;
-const KERNEL_STACK_PAGES: usize = 16;
+const KERNEL_STACK_PAGES: usize = 64;
 
 #[repr(C)]
 #[derive(Debug)]

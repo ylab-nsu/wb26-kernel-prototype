@@ -3,9 +3,8 @@
 
 #[macro_use]
 mod print;
-mod user1;
 mod og_processes;
-
+mod user1;
 
 use core::arch::asm;
 use core::panic::PanicInfo;
@@ -21,12 +20,10 @@ pub fn crt0() -> ! {
     }
     main();
     println!("Main terminated");
-    loop {riscv::asm::wfi()} // No exit() for now
+    loop {} // No exit() for now
 }
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    loop {
-        riscv::asm::wfi();
-    }
+    loop {}
 }
