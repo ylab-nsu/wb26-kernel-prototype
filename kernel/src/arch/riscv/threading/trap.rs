@@ -2,7 +2,6 @@ use crate::arch::traits::TargetTrapFrame;
 use riscv::interrupt::{Exception, Interrupt, Trap};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec::Stvec;
-use crate::scheduler::reschedule;
 
 #[repr(C)]
 #[derive(Debug, Default, Clone)]
@@ -65,14 +64,16 @@ pub fn setup_trap() {
 }
 
 #[export_name = "_handle_trap_rust"]
-extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) {
+extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
     // println!("Current SP: {:p}", frame);
     let x: Trap<Interrupt, Exception> = riscv::register::scause::read().cause().try_into().unwrap();
     println!("Cause: {x:?}");
 
+    let mut need_reschedule = false;
+
     match x {
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
-            reschedule(frame);
+            need_reschedule = true;
         }
 
         Trap::Exception(Exception::UserEnvCall) => {
@@ -110,4 +111,6 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) {
             println!("exception:{cause:?}");
         }
     }
+
+    need_reschedule
 }

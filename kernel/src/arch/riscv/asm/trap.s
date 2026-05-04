@@ -89,12 +89,24 @@ _start_trap:
     save_gp %T6
 
 	csrr t0, sscratch
-    sd t0, 16(sp)
+    sd t0, SP*REG_SIZE(sp)
     csrr t0, sepc
-    sd t0, 0(sp)
+    sd t0, PC*REG_SIZE(sp)
 
-    add     a0, sp, zero
-	jal     ra, _handle_trap_rust
+    mv   a0, sp
+	jal  ra, _handle_trap_rust # returns need_reschedule
+
+    beqz a0, 0f
+    # mv   a0, sp
+    jal  ra, _reschedule_rust # returns new sp
+    mv sp, a0
+
+
+0:
+    ld t0, 0(sp)
+    csrw sepc, t0
+    ld t0, 16(sp)
+    csrw sscratch, t0
 
     load_gp %RA
     load_gp %GP
@@ -127,11 +139,6 @@ _start_trap:
     load_gp %T5
     load_gp %T6
 
-    # Before load?
-    ld t0, 0(sp)
-    csrw sepc, t0
-    ld t0, 16(sp)
-    csrw sscratch, t0
 
     csrrw	sp, sscratch, sp
 

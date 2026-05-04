@@ -2,9 +2,45 @@ use crate::arch::traits::TargetTrapFrame;
 use crate::arch::TrapFrame;
 use alloc::vec::Vec;
 
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct Page(pub [usize; 512]);
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct PagePool {
+    pub kernel_stack_pages: [Page; 64],
+}
+
+extern "C" {
+    #[link_name = "__s_temp_kernel_stacks"]
+    static mut MMU_TABLE: [Page; 64];
+}
+
 pub struct Thread {
     pub id: usize,
-    pub frame: TrapFrame,
+    pub kernel_sp: usize,
+    pub frame: &'static mut TrapFrame,
+}
+
+impl Thread {
+    unsafe fn new(id: usize) -> Self {
+        let _left = &mut MMU_TABLE[id * 4] as *mut Page as usize;
+        let right = &mut MMU_TABLE[(id + 1) * 4] as *mut Page as usize;
+
+        let trap_frame_addr =
+            (right - size_of::<TrapFrame>()) / size_of::<TrapFrame>() * size_of::<TrapFrame>();
+        debug_assert!(trap_frame_addr != 0);
+        debug_assert!(trap_frame_addr % align_of::<TrapFrame>() == 0);
+        let trap_frame = trap_frame_addr as *mut TrapFrame;
+
+        Thread {
+            id,
+            kernel_sp: trap_frame_addr,
+            frame: &mut *trap_frame,
+        }
+    }
 }
 
 pub static mut PROCESSES: Vec<Thread> = Vec::new();
@@ -16,11 +52,8 @@ pub const MAX_STACK: usize = 0x48000000;
 
 pub fn spawn(f: extern "C" fn() -> !, sp: usize) {
     unsafe {
-        let thread = Thread {
-            id: PROCESSES.len() + 1,
-            frame: TrapFrame::default().with_pc(f as usize).with_sp(sp),
-        };
-
+        let thread = Thread::new(PROCESSES.len() + 1);
+        *thread.frame = TrapFrame::default().with_pc(f as usize).with_sp(sp);
         PROCESSES.push(thread);
     }
 }
@@ -97,25 +130,11 @@ pub fn setup_threads() {
     println!("Current time: {}", time);
     // sbi::timer::set_timer(time + 10_000_000).expect("Can't set timer");
 
-    let pr0 = Thread {
-        id: 0,
-        frame: TrapFrame::default(),
-    };
-
     unsafe {
+        let pr0 = Thread::new(0);
         PROCESSES.push(pr0);
     }
 
-    // Doesn't work
-    // extern "C" {
-    //     static __eustack: usize;
-    //     static __sustack: usize;
-    // }
-    //
-    // unsafe {
-    //     NEXT_STACK = addr_of!(__eustack) as usize;
-    //     MAX_STACK = addr_of!(__sustack) as usize;
-    // }
     for prog in USER_PROGRAMS {
         spawn_user_program(prog);
     }
