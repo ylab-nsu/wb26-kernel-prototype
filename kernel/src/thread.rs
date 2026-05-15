@@ -1,6 +1,7 @@
 use crate::mmu::set_satp;
 use crate::page_pool::{Page, PAGE_POOL};
-use alloc::vec::Vec;
+// use alloc::vec::Vec;
+use heapless::Vec;
 use riscv::interrupt::{Exception, Interrupt, Trap};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec::Stvec;
@@ -79,7 +80,7 @@ impl Thread {
     }
 }
 
-static mut PROCESSES: Vec<Thread> = Vec::new();
+static mut PROCESSES: Vec<Thread, 256> = Vec::new();
 
 static mut CURRENT_THREAD: usize = 0;
 

@@ -1,10 +1,10 @@
 #![no_std]
 #![no_main]
 
-#[macro_use]
-extern crate alloc;
+// #[macro_use]
+// extern crate alloc;
 mod asm;
-mod heap;
+// mod heap;
 mod paging;
 #[macro_use]
 mod print;
@@ -26,7 +26,7 @@ use fdt_rs::prelude::FallibleIterator;
 #[export_name = "_main"]
 fn main(_hart_id: usize, _dtc: usize) -> ! {
     println!("Initializing heap...");
-    heap::init_heap();
+    // heap::init_heap();
     mmu::init_mmu();
     thread::setup_trap();
     thread::setup_threads();
