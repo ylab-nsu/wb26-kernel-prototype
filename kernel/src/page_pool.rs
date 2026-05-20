@@ -3,14 +3,14 @@ const KERNEL_STACK_PAGES: usize = 64;
 
 #[repr(C)]
 #[derive(Debug)]
-pub struct Page(pub [usize; 512]);
+pub(crate) struct Page(pub(crate) [usize; 512]);
 
 #[repr(C)]
 #[derive(Debug)]
-pub struct PagePool {
-    pub mmu_pages: [Page; MMU_PAGES],
-    pub kernel_stack_pages: [Page; KERNEL_STACK_PAGES],
+pub(crate) struct PagePool {
+    pub(crate) mmu_pages: [Page; MMU_PAGES],
+    pub(crate) kernel_stack_pages: [Page; KERNEL_STACK_PAGES],
 }
 
 #[link_section = ".page_pool"]
-pub static mut PAGE_POOL: PagePool = unsafe { core::mem::zeroed() };
+pub(crate) static mut PAGE_POOL: PagePool = unsafe { core::mem::zeroed() };

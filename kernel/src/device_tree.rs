@@ -1,4 +1,4 @@
-pub fn handle_device_tree(addr: usize) {
+pub(crate) fn handle_device_tree(addr: usize) {
     use core::ptr::slice_from_raw_parts;
 
     println!("DTC addr: 0x{:x}", addr);

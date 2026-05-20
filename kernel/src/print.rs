@@ -1,9 +1,8 @@
 use core::fmt::Write;
 use core::ptr;
 use riscv::_export::critical_section;
-use sbi::PhysicalAddress;
 
-pub struct MyPrinter;
+pub(crate) struct MyPrinter;
 
 impl Write for MyPrinter {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {

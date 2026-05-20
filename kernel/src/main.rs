@@ -1,7 +1,8 @@
 #![no_std]
 #![no_main]
+#![warn(unsafe_op_in_unsafe_fn)]
 
-#[macro_use]
+// #[macro_use]
 extern crate alloc;
 mod asm;
 mod heap;
@@ -12,24 +13,21 @@ mod device_tree;
 mod layout;
 mod mmu;
 mod page_pool;
-mod thread;
+mod threading;
 
-use core::any::Any;
 use core::arch::asm;
-use core::fmt::Write;
-use core::ops::{Deref, DerefMut, Index};
 use core::panic::PanicInfo;
 
 // use crate::paging::alloc::{set_global_physical_page_allocator, PhysicalPage, PhysicalPageAllocator};
-use fdt_rs::prelude::FallibleIterator;
+// use fdt_rs::prelude::FallibleIterator;
 
 #[export_name = "_main"]
 fn main(_hart_id: usize, _dtc: usize) -> ! {
     println!("Initializing heap...");
     heap::init_heap();
     mmu::init_mmu();
-    thread::setup_trap();
-    thread::setup_threads();
+    threading::init::setup_trap();
+    threading::init::setup_threads();
     // device_tree::handle_device_tree(_dtc);
 
     println!("I am virtual {:x?}!", riscv::register::satp::read());
@@ -37,7 +35,7 @@ fn main(_hart_id: usize, _dtc: usize) -> ! {
     layout::print_kernel_layout();
 
     unsafe { asm!("csrw sscratch, sp") };
-    thread::enable_threading();
+    threading::init::enable_threading();
 
     // let ppa = PhysicalPageAllocator::new(0x1000);
     //

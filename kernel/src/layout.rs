@@ -1,22 +1,22 @@
 #[repr(C)]
 #[derive(Debug)]
-pub struct KernelLayout {
-    pub kernel_va_offset: usize,
-    pub stext: usize,
-    pub etext: usize,
-    pub srodata: usize,
-    pub erodata: usize,
-    pub sdata: usize,
-    pub edata: usize,
-    pub sbss: usize,
-    pub ebss: usize,
-    pub spage_pool: usize,
-    pub epage_pool: usize,
+pub(crate) struct KernelLayout {
+    pub(crate) kernel_va_offset: usize,
+    pub(crate) stext: usize,
+    pub(crate) etext: usize,
+    pub(crate) srodata: usize,
+    pub(crate) erodata: usize,
+    pub(crate) sdata: usize,
+    pub(crate) edata: usize,
+    pub(crate) sbss: usize,
+    pub(crate) ebss: usize,
+    pub(crate) spage_pool: usize,
+    pub(crate) epage_pool: usize,
 }
 
 extern "C" {
     #[link_name = "__kernel_layout"]
-    pub static kernel_layout: KernelLayout;
+    pub(crate) static kernel_layout: KernelLayout;
 }
 
 unsafe fn print(name: &str, start: usize, end: usize) {
@@ -27,12 +27,12 @@ unsafe fn print(name: &str, start: usize, end: usize) {
     for i in 0..pages {
         println!(
             "Page {:x}",
-            (start_page + i) - (kernel_layout.kernel_va_offset >> 12)
+            (start_page + i) - (unsafe { kernel_layout.kernel_va_offset } >> 12)
         );
     }
 }
 
-pub fn print_kernel_layout() {
+pub(crate) fn print_kernel_layout() {
     unsafe {
         println!("{:x?}", kernel_layout);
         print("rodata", kernel_layout.srodata, kernel_layout.erodata);
