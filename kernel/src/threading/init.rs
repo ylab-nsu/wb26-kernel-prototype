@@ -1,5 +1,6 @@
 use crate::arch::traits::TargetTrapFrame;
 use crate::threading::thread::{create_empty_process, get_process, spawn};
+use core::arch::global_asm;
 
 pub static mut NEXT_USER_STACK: usize = 0x47000000;
 pub const MAX_USER_STACK: usize = 0x48000000;
@@ -8,48 +9,24 @@ pub struct UserProgram {
     pub entry: extern "C" fn(),
     pub stack_size: usize,
 }
-pub struct UserProgram2 {
-    pub entry: extern "C" fn() -> !,
-    pub stack_size: usize,
+
+global_asm!(
+    ".section .rodata.usersymaddrs, \"a\"",
+    ".align 2",
+    "crt0:     .dc.a __user_crt0",
+    "user1:    .dc.a __user_user1",
+    "process1: .dc.a __user_process1",
+    "process2: .dc.a __user_process2",
+    "process3: .dc.a __user_process3",
+);
+
+extern "C" {
+    static crt0: extern "C" fn() -> !;
+    static user1: extern "C" fn();
+    static process1: extern "C" fn();
+    static process2: extern "C" fn();
+    static process3: extern "C" fn();
 }
-
-unsafe extern "C" {
-    #[link_name = "__user_user1"]
-    safe fn user1();
-    #[link_name = "__user_process1"]
-    safe fn process1();
-    #[link_name = "__user_process2"]
-    safe fn process2();
-    #[link_name = "__user_process3"]
-    safe fn process3();
-    #[link_name = "__user_crt0"]
-    safe fn crt0() -> !;
-}
-
-// const CRT0: extern "C" fn() -> ! = _crt0;
-const CRT0: &[UserProgram2] = &[UserProgram2 {
-    entry: crt0,
-    stack_size: 0,
-}];
-
-const USER_PROGRAMS: &[UserProgram] = &[
-    UserProgram {
-        entry: user1,
-        stack_size: 64 * 1024,
-    },
-    UserProgram {
-        entry: process1,
-        stack_size: 64 * 1024,
-    },
-    UserProgram {
-        entry: process2,
-        stack_size: 64 * 1024,
-    },
-    UserProgram {
-        entry: process3,
-        stack_size: 64 * 1024,
-    },
-];
 
 pub fn spawn_user_program(prog: &UserProgram) {
     let stack_end;
@@ -61,7 +38,7 @@ pub fn spawn_user_program(prog: &UserProgram) {
         NEXT_USER_STACK = stack_end;
     }
     // spawn(USER_PROGRAMS[0].entry, stack_end);
-    let id = spawn(CRT0[0].entry, stack_end);
+    let id = spawn(unsafe { crt0 }, stack_end);
     unsafe {
         get_process(id).frame.set_arg0(prog.entry as usize);
     }
@@ -76,7 +53,26 @@ pub fn setup_threads() {
         create_empty_process();
     }
 
-    for prog in USER_PROGRAMS {
-        spawn_user_program(prog);
+    let user_programs: [UserProgram; _] = [
+        UserProgram {
+            entry: unsafe { user1 },
+            stack_size: 64 * 1024,
+        },
+        UserProgram {
+            entry: unsafe { process1 },
+            stack_size: 64 * 1024,
+        },
+        UserProgram {
+            entry: unsafe { process2 },
+            stack_size: 64 * 1024,
+        },
+        UserProgram {
+            entry: unsafe { process3 },
+            stack_size: 64 * 1024,
+        },
+    ];
+
+    for prog in user_programs {
+        spawn_user_program(&prog);
     }
 }
