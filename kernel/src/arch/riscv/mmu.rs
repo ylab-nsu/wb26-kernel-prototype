@@ -2,8 +2,6 @@ use crate::arch::riscv::memory::layout::KERNEL_LAYOUT;
 use core::ptr::addr_of;
 use riscv::register::satp;
 
-const POOL_PAGES: usize = 16;
-
 #[repr(C, align(4096))]
 struct PageTable(pub [usize; 512]);
 

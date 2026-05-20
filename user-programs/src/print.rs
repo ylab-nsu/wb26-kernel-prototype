@@ -1,6 +1,4 @@
 use core::fmt::Write;
-use core::ptr;
-use riscv::_export::critical_section;
 
 pub struct MyPrinter;
 

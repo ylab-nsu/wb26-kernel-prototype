@@ -1,7 +1,6 @@
 #![no_std]
 #![no_main]
 
-#[macro_use]
 extern crate alloc;
 
 #[macro_use]
@@ -11,17 +10,14 @@ pub mod allocator;
 pub mod arch;
 pub mod boot;
 pub mod sync;
-pub mod thread;
 pub mod vm;
-mod scheduler;
+pub mod threading;
 
 use core::panic::PanicInfo;
 
-use crate::thread::setup_threads;
-use crate::{
-    arch::{traits::TargetPlatform, Platform},
-    boot::BootContext,
-};
+use crate::arch::{traits::TargetPlatform, Platform};
+use crate::boot::BootContext;
+use crate::threading::init::setup_threads;
 
 pub fn kernel_main(_ctx: BootContext) -> ! {
     info!("Starting kernel (kernel_main())");

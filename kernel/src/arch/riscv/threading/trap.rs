@@ -60,7 +60,7 @@ pub fn setup_trap() {
     extern "C" {
         fn _start_trap();
     }
-    unsafe { riscv::register::stvec::write(Stvec::new(_start_trap as usize, TrapMode::Direct)) }
+    unsafe { riscv::register::stvec::write(Stvec::new(_start_trap as *const () as usize, TrapMode::Direct)) }
 }
 
 #[export_name = "_handle_trap_rust"]
@@ -77,7 +77,7 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
         }
 
         Trap::Exception(Exception::UserEnvCall) => {
-            if (frame.a6 == 0) {
+            if frame.a6 == 0 {
                 println!("Received non-SBI UserEnvCall");
             } else {
                 println!("    Redirecting UserEnvCall to SBI");
@@ -100,7 +100,7 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
 
         Trap::Exception(Exception::InstructionFault) => {
             sbi::timer::set_timer(u64::MAX).expect("Can't set timer");
-            let epc = unsafe { riscv::register::sepc::read() };
+            let epc = riscv::register::sepc::read();
             panic!("InstructionFault {epc:x} {}", frame.pc);
         }
 
@@ -111,6 +111,5 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
             println!("exception:{cause:?}");
         }
     }
-
     need_reschedule
 }

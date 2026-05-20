@@ -1,9 +1,9 @@
-use crate::arch::riscv::alloc;
 use crate::arch::riscv::mapping::map_kernel_sections;
 use crate::arch::riscv::memory::heap::init_heap;
 use crate::arch::riscv::memory::stack::init_stack;
 use crate::arch::riscv::mmu::init_mmu;
 use crate::arch::riscv::threading::trap::setup_trap;
+use crate::arch::riscv::{alloc, vm};
 use crate::arch::AddressSpace;
 use crate::boot::BootContext;
 use crate::{arch::riscv::memory::layout::KERNEL_LAYOUT, kernel_main};

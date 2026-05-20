@@ -1,4 +1,7 @@
 use crate::arch::{set_satp, TrapFrame};
+use crate::threading::thread::{
+    get_current_thread_id, get_process, get_process_count, set_current_thread_id,
+};
 
 #[export_name = "_reschedule_rust"]
 pub fn reschedule(/*frame: &mut TrapFrame*/) -> *mut TrapFrame {
@@ -7,18 +10,16 @@ pub fn reschedule(/*frame: &mut TrapFrame*/) -> *mut TrapFrame {
     // sbi::timer::set_timer(time + 1_000).expect("Can't set timer");
 
     let next_thread = unsafe {
-        if crate::thread::CURRENT_THREAD < crate::thread::PROCESSES.len() - 1 {
-            crate::thread::CURRENT_THREAD + 1
+        if get_current_thread_id() < get_process_count() - 1 {
+            get_current_thread_id() + 1
         } else {
             1
         }
     };
 
     let (_curr, next) = unsafe {
-        let curr = crate::thread::PROCESSES
-            .get_mut(crate::thread::CURRENT_THREAD)
-            .unwrap();
-        let next = crate::thread::PROCESSES.get_mut(next_thread).unwrap();
+        let curr = get_process(get_current_thread_id());
+        let next = get_process(next_thread);
 
         // println!("CURRENT_THREAD: {CURRENT_THREAD}");
 
@@ -26,7 +27,7 @@ pub fn reschedule(/*frame: &mut TrapFrame*/) -> *mut TrapFrame {
     };
 
     unsafe {
-        crate::thread::CURRENT_THREAD = next_thread;
+        set_current_thread_id(next_thread);
         riscv::register::sstatus::set_spp(riscv::register::sstatus::SPP::User);
         set_satp(1);
     };
