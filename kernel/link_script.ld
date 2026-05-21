@@ -320,7 +320,7 @@ SECTIONS
     . += PAGE_SIZE * 32;
     __e_temp_mmu_table = .;
     __s_temp_kernel_stacks = .;
-    . += PAGE_SIZE * 64;
+    . += PAGE_SIZE * 512;
     __e_temp_kernel_stacks = .;
   } > KERNEL_REGION
 

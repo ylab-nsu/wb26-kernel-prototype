@@ -51,11 +51,9 @@ _start_trap:
     # addi sp, sp, - NUM_GP_REGS * REG_SIZE
     csrrw	sp, sscratch, sp
 
-	# .set 	i, 0
-	# .rept	31
-	# 	save_gp	%i
-	#	.set	i, i+1
-	# .endr
+    bnez sp, 1f
+    csrrw	sp, sscratch, sp
+1:	
 
     save_gp %RA
     save_gp %GP
@@ -96,16 +94,16 @@ _start_trap:
     mv   a0, sp
 	jal  ra, _handle_trap_rust # returns need_reschedule
 
-    beqz a0, 0f
+    beqz a0, 1f
     # mv   a0, sp
     jal  ra, _reschedule_rust # returns new sp
     mv sp, a0
+1:
 
 
-0:
-    ld t0, 0(sp)
+    ld t0, PC*REG_SIZE(sp)
     csrw sepc, t0
-    ld t0, 16(sp)
+    ld t0, SP*REG_SIZE(sp)
     csrw sscratch, t0
 
     load_gp %RA
@@ -141,6 +139,10 @@ _start_trap:
 
 
     csrrw	sp, sscratch, sp
+
+    bnez sp, 1f
+    csrrw	sp, sscratch, sp
+1:	
 
     sret
 

@@ -9,9 +9,10 @@ mod print;
 pub mod allocator;
 pub mod arch;
 pub mod boot;
+pub mod drivers;
 pub mod sync;
-pub mod vm;
 pub mod threading;
+pub mod vm;
 
 use core::panic::PanicInfo;
 

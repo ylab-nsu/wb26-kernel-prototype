@@ -1,5 +1,6 @@
 use crate::arch::traits::TargetTrapFrame;
-use crate::threading::thread::{create_empty_process, get_process, spawn};
+use crate::drivers::driver_task;
+use crate::threading::thread::{create_empty_process, get_process, spawn_kernel, spawn_user};
 use core::arch::global_asm;
 
 pub static mut NEXT_USER_STACK: usize = 0x47000000;
@@ -38,7 +39,7 @@ pub fn spawn_user_program(prog: &UserProgram) {
         NEXT_USER_STACK = stack_end;
     }
     // spawn(USER_PROGRAMS[0].entry, stack_end);
-    let id = spawn(unsafe { crt0 }, stack_end);
+    let id = spawn_user(unsafe { crt0 }, stack_end);
     unsafe {
         get_process(id).frame.set_arg0(prog.entry as usize);
     }
@@ -49,9 +50,9 @@ pub fn setup_threads() {
     println!("Current time: {}", time);
     // sbi::timer::set_timer(time + 10_000_000).expect("Can't set timer");
 
-    unsafe {
-        create_empty_process();
-    }
+    create_empty_process();
+
+    spawn_kernel(driver_task);
 
     let user_programs: [UserProgram; _] = [
         UserProgram {
