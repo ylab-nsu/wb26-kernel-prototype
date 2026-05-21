@@ -10,10 +10,16 @@ fn reschedule(/*frame: &mut TrapFrame*/) -> *mut TrapFrame {
     // sbi::timer::set_timer(time + 1_000).expect("Can't set timer");
 
     let next_thread = unsafe {
-        if get_current_thread_id() < get_process_count() - 1 {
-            get_current_thread_id() + 1
-        } else {
-            1
+        let mut checked = get_current_thread_id();
+        loop {
+            checked = if checked < get_process_count() - 1 {
+                checked + 1
+            } else {
+                0
+            };
+            if get_process(checked).valid {
+                break checked;
+            }
         }
     };
 
@@ -33,8 +39,13 @@ fn reschedule(/*frame: &mut TrapFrame*/) -> *mut TrapFrame {
 
     unsafe {
         set_current_thread_id(next_thread);
-        riscv::register::sstatus::set_spp(riscv::register::sstatus::SPP::User);
-        set_satp(1);
+        if next.is_kernel {
+            riscv::register::sstatus::set_spp(riscv::register::sstatus::SPP::Supervisor);
+            set_satp(0);
+        } else {
+            riscv::register::sstatus::set_spp(riscv::register::sstatus::SPP::User);
+            set_satp(1);
+        }
     };
 
     next.frame

@@ -14,6 +14,7 @@ mod layout;
 mod mmu;
 mod page_pool;
 mod threading;
+mod drivers;
 
 use core::arch::asm;
 use core::panic::PanicInfo;

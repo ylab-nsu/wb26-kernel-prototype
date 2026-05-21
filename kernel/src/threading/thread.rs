@@ -52,15 +52,17 @@ impl TrapFrame {
 
 pub(crate) struct Thread {
     pub(crate) id: usize,
-    pub(crate) kernel_sp: usize,
+    // pub(crate) kernel_sp: usize,
     pub(crate) frame: &'static mut TrapFrame,
+    pub(crate) valid: bool,
+    pub(crate) is_kernel: bool,
 }
 
 impl Thread {
     unsafe fn new(id: usize) -> Self {
-        let _left = unsafe { &mut PAGE_POOL.kernel_stack_pages[id * 4] as *mut Page as usize };
+        let _left = unsafe { &mut PAGE_POOL.kernel_stack_pages[id * 16] as *mut Page as usize };
         let right =
-            unsafe { &mut PAGE_POOL.kernel_stack_pages[(id + 1) * 4] as *mut Page as usize };
+            unsafe { &mut PAGE_POOL.kernel_stack_pages[(id + 1) * 16] as *mut Page as usize };
 
         let trap_frame_addr =
             (right - size_of::<TrapFrame>()) / size_of::<TrapFrame>() * size_of::<TrapFrame>();
@@ -70,8 +72,10 @@ impl Thread {
 
         Thread {
             id,
-            kernel_sp: trap_frame_addr,
+            // kernel_sp: trap_frame_addr,
             frame: unsafe { &mut *trap_frame },
+            valid: true,
+            is_kernel: false,
         }
     }
 }
@@ -96,20 +100,34 @@ pub(crate) unsafe fn get_process(id: usize) -> &'static mut Thread {
     unsafe { PROCESSES.get_mut(id).unwrap() }
 }
 
-pub(crate) unsafe fn create_empty_process() -> usize {
+pub(crate) fn create_empty_process() -> usize {
     unsafe {
         let id = PROCESSES.len();
-        let pr0 = Thread::new(id);
+        let mut pr0 = Thread::new(id);
+        pr0.valid = false;
         PROCESSES.push(pr0);
         id
     }
 }
 
-pub(crate) fn spawn(f: extern "C" fn() -> !, sp: usize) -> usize {
+pub(crate) fn spawn_user(f: extern "C" fn() -> !, user_sp: usize) -> usize {
     unsafe {
         let id = PROCESSES.len();
         let thread = Thread::new(id);
-        *thread.frame = TrapFrame::default().with_pc(f as usize).with_sp(sp);
+        *thread.frame = TrapFrame::default().with_pc(f as usize).with_sp(user_sp);
+        PROCESSES.push(thread);
+        id
+    }
+}
+
+pub(crate) fn spawn_kernel(f: extern "C" fn() -> !) -> usize {
+    unsafe {
+        let id = PROCESSES.len();
+        let mut thread = Thread::new(id);
+        *thread.frame = TrapFrame::default().with_pc(f as usize);
+        // thread.kernel_sp = 0;
+        thread.is_kernel = true;
+        // thread.kernel_sp = 0;
         PROCESSES.push(thread);
         id
     }

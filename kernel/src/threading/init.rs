@@ -3,6 +3,7 @@ use core::arch::global_asm;
 use riscv::interrupt::Interrupt;
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec::Stvec;
+use crate::drivers;
 
 static mut NEXT_USER_STACK: usize = 0x47000000;
 const MAX_USER_STACK: usize = 0x48000000;
@@ -44,7 +45,7 @@ fn spawn_user_program(prog: &UserProgram) {
         NEXT_USER_STACK = stack_end;
     }
     // spawn(USER_PROGRAMS[0].entry, stack_end);
-    let id = thread::spawn(unsafe { crt0 }, stack_end);
+    let id = thread::spawn_user(unsafe { crt0 }, stack_end);
     unsafe {
         thread::get_process(id).frame.a0 = prog.entry as usize;
     }
@@ -67,10 +68,11 @@ pub(crate) fn setup_threads() {
     println!("Current time: {}", time);
     // sbi::timer::set_timer(time + 10_000_000).expect("Can't set timer");
 
-    unsafe {
-        thread::create_empty_process();
-    }
-
+    thread::create_empty_process();
+    
+    thread::spawn_kernel(drivers::driver_task);
+    
+    
     let user_programs: [UserProgram; _] = [
         UserProgram {
             entry: unsafe { user1 },
