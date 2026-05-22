@@ -14,6 +14,7 @@ mod layout;
 mod device_tree;
 mod mmu;
 mod arch;
+mod sync;
 
 pub mod vm;
 
