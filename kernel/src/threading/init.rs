@@ -41,7 +41,7 @@ pub fn spawn_user_program(prog: &UserProgram) {
     // spawn(USER_PROGRAMS[0].entry, stack_end);
     let id = spawn_user(unsafe { crt0 }, stack_end);
     unsafe {
-        get_process(id).frame.set_arg0(prog.entry as usize);
+        get_process(id).user_frame.set_arg0(prog.entry as usize);
     }
 }
 

@@ -1,6 +1,5 @@
 .option norvc
 .altmacro
-.set NUM_GP_REGS, 32  # Number of registers per context
 .set REG_SIZE, 8   # Register size (in bytes)
 
 .set PC, 0
@@ -35,6 +34,7 @@
 .set T4, 29
 .set T5, 30
 .set T6, 31
+.set FRAME_SIZE, 32
 
 # Use macros for saving and restoring multiple registers
 .macro save_gp i, basereg=sp
@@ -48,7 +48,7 @@
 .global _start_trap
 .align 4
 _start_trap:
-    # addi sp, sp, - NUM_GP_REGS * REG_SIZE
+    addi sp, sp, - FRAME_SIZE * REG_SIZE
     csrrw	sp, sscratch, sp
 
     bnez sp, 1f
@@ -95,10 +95,12 @@ _start_trap:
 	jal  ra, _handle_trap_rust # returns need_reschedule
 
     beqz a0, 1f
-    # mv   a0, sp
-    jal  ra, _reschedule_rust # returns new sp
-    mv sp, a0
+    jal  ra, _reschedule_rust
 1:
+
+# Initialize context.ra for a new process to this
+.global _initial_return_trap
+_initial_return_trap:
 
 
     ld t0, PC*REG_SIZE(sp)
@@ -144,14 +146,6 @@ _start_trap:
     csrrw	sp, sscratch, sp
 1:	
 
-    sret
+	addi sp, sp, FRAME_SIZE * REG_SIZE
 
-	# .set	i, 1
-	# .rept	31
-	# 	load_gp %i
-	# 	.set	i, i+1
-	# .endr
-
-	# addi sp, sp, NUM_GP_REGS * REG_SIZE
-
-	# sret
+	sret

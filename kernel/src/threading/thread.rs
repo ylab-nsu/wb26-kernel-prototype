@@ -11,10 +11,45 @@ extern "C" {
     static mut KERNEL_STACKS: [Page; 512];
 }
 
+#[repr(C)]
+#[derive(Debug, Default, Clone)]
+pub struct Context {
+    pub ra: usize,
+    pub sp: usize,
+    pub s0: usize,
+    pub s1: usize,
+    pub s2: usize,
+    pub s3: usize,
+    pub s4: usize,
+    pub s5: usize,
+    pub s6: usize,
+    pub s7: usize,
+    pub s8: usize,
+    pub s9: usize,
+    pub s10: usize,
+    pub s11: usize,
+}
+
+impl Context {
+    fn with_ra(mut self, ra: usize) -> Self {
+        self.ra = ra;
+        self
+    }
+
+    fn with_sp(mut self, sp: usize) -> Self {
+        self.sp = sp;
+        self
+    }
+}
+
+extern "C" {
+    fn _initial_return_trap() -> !;
+}
+
 pub struct Thread {
     pub id: usize,
-    // pub kernel_sp: usize,
-    pub frame: &'static mut TrapFrame,
+    pub context: &'static mut Context,
+    pub user_frame: &'static mut TrapFrame, // Cannot be used for kernel threads
     pub valid: bool,
     pub is_kernel: bool,
 }
@@ -24,16 +59,22 @@ impl Thread {
         let _left = unsafe { &mut KERNEL_STACKS[id * 16] as *mut Page as usize };
         let right = unsafe { &mut KERNEL_STACKS[(id + 1) * 16] as *mut Page as usize };
 
-        let trap_frame_addr =
-            (right - size_of::<TrapFrame>()) / size_of::<TrapFrame>() * size_of::<TrapFrame>();
+        let context_addr =
+            (right - size_of::<Context>()) / align_of::<Context>() * align_of::<Context>();
+        debug_assert!(context_addr != 0);
+        debug_assert!(context_addr % align_of::<Context>() == 0);
+        let context = context_addr as *mut Context;
+
+        let trap_frame_addr = (context_addr - size_of::<TrapFrame>()) / align_of::<TrapFrame>()
+            * align_of::<TrapFrame>();
         debug_assert!(trap_frame_addr != 0);
         debug_assert!(trap_frame_addr % align_of::<TrapFrame>() == 0);
         let trap_frame = trap_frame_addr as *mut TrapFrame;
 
         Thread {
             id,
-            // kernel_sp: trap_frame_addr,
-            frame: unsafe { &mut *trap_frame },
+            context: unsafe { &mut *context },
+            user_frame: unsafe { &mut *trap_frame },
             valid: true,
             is_kernel: false,
         }
@@ -44,23 +85,23 @@ static mut PROCESSES: Vec<Thread> = Vec::new();
 
 static mut CURRENT_THREAD: usize = 0;
 
-pub(crate) unsafe fn get_current_thread_id() -> usize {
+pub unsafe fn get_current_thread_id() -> usize {
     unsafe { CURRENT_THREAD }
 }
 
-pub(crate) unsafe fn set_current_thread_id(id: usize) {
+pub unsafe fn set_current_thread_id(id: usize) {
     unsafe { CURRENT_THREAD = id }
 }
 
-pub(crate) unsafe fn get_process_count() -> usize {
+pub unsafe fn get_process_count() -> usize {
     unsafe { PROCESSES.len() }
 }
 
-pub(crate) unsafe fn get_process(id: usize) -> &'static mut Thread {
+pub unsafe fn get_process(id: usize) -> &'static mut Thread {
     unsafe { PROCESSES.get_mut(id).unwrap() }
 }
 
-pub(crate) fn create_empty_process() -> usize {
+pub fn create_empty_process() -> usize {
     unsafe {
         let id = PROCESSES.len();
         let mut pr0 = Thread::new(id);
@@ -74,7 +115,10 @@ pub fn spawn_user(f: extern "C" fn() -> !, user_sp: usize) -> usize {
     unsafe {
         let id = PROCESSES.len();
         let thread = Thread::new(id);
-        *thread.frame = TrapFrame::default().with_pc(f as usize).with_sp(user_sp);
+        *thread.user_frame = TrapFrame::default().with_pc(f as usize).with_sp(user_sp);
+        *thread.context = Context::default()
+            .with_ra(_initial_return_trap as *const () as usize)
+            .with_sp((thread.user_frame as *mut TrapFrame) as usize);
         PROCESSES.push(thread);
         id
     }
@@ -84,10 +128,11 @@ pub fn spawn_kernel(f: extern "C" fn() -> !) -> usize {
     unsafe {
         let id = PROCESSES.len();
         let mut thread = Thread::new(id);
-        *thread.frame = TrapFrame::default().with_pc(f as usize);
-        // thread.kernel_sp = 0;
+        *thread.user_frame = TrapFrame::default().with_pc(f as usize).with_sp(0);
+        *thread.context = Context::default()
+            .with_ra(_initial_return_trap as *const () as usize)
+            .with_sp(thread.user_frame as *mut TrapFrame as usize);
         thread.is_kernel = true;
-        // thread.kernel_sp = 0;
         PROCESSES.push(thread);
         id
     }

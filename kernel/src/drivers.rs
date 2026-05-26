@@ -1,4 +1,4 @@
-pub(crate) extern "C" fn driver_task() -> ! {
+pub extern "C" fn driver_task() -> ! {
     loop {
         // Demonstration that driver works in S-mode and can read registers
         let sstatus = riscv::register::sstatus::read();
