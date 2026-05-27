@@ -48,5 +48,6 @@ pub(crate) fn reschedule() {
         }
     };
 
+    println!("Switching from {} to {}", curr.id, next.id);
     unsafe { _switch_thread(curr.context, next.context) };
 }

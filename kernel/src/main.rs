@@ -35,7 +35,7 @@ fn main(_hart_id: usize, _dtc: usize) -> ! {
 
     layout::print_kernel_layout();
 
-    unsafe { asm!("csrw sscratch, sp") };
+    unsafe { asm!("csrw sscratch, sp", options(nostack)) };
     threading::init::enable_threading();
 
     // let ppa = PhysicalPageAllocator::new(0x1000);

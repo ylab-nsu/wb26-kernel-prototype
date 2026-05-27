@@ -1,14 +1,21 @@
+use crate::threading::reschedule;
+
+use heapless::mpmc;
+
+#[allow(deprecated)]
+pub(crate) static TEST_DRIVER_QUEUE: mpmc::Queue<i32, 16> = mpmc::Queue::new();
+
 pub(crate) extern "C" fn driver_task() -> ! {
     loop {
-        // Demonstration that driver works in S-mode and can read registers
-        let sstatus = riscv::register::sstatus::read();
-        println!("Me driver me read sstatus: {sstatus:x?}");
-        for _ in 1..1_000_000 {}
-        let satp = riscv::register::satp::read();
-        println!("Me driver me read satp: {satp:x?}");
-        for _ in 1..1_000_000 {}
-        let stvec = riscv::register::stvec::read();
-        println!("Me driver me read stvec: {stvec:x?}");
-        for _ in 1..1_000_000 {}
+        match TEST_DRIVER_QUEUE.dequeue() {
+            None => {
+                println!("Driver task yields");
+                reschedule();
+                println!("Driver back to work");
+            }
+            Some(number) => {
+                println!("Got message to print number {number}");
+            }
+        }
     }
 }

@@ -13,10 +13,3 @@ bench = false
 [dependencies]
 riscv = "0.16.0"
 sbi = "0.3.0"
-
-[profile.dev]
-panic = "abort"
-
-[profile.release]
-panic = "abort"
-lto = true

@@ -5,6 +5,7 @@
 mod print;
 mod og_processes;
 mod user1;
+mod syscalls;
 
 use core::arch::asm;
 use core::panic::PanicInfo;
@@ -16,6 +17,7 @@ pub fn crt0() -> ! {
         asm!(
             "mv {0}, a0",
             out(reg) main,
+            options(nostack),
         );
     }
     main();
