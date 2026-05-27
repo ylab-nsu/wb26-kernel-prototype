@@ -4,6 +4,7 @@
 #[macro_use]
 mod print;
 mod og_processes;
+mod syscalls;
 mod user1;
 
 use core::arch::asm;
@@ -16,6 +17,7 @@ pub fn crt0() -> ! {
         asm!(
             "mv {0}, a0",
             out(reg) main,
+            options(nostack),
         );
     }
     main();

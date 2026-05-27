@@ -1,4 +1,5 @@
 use crate::arch::traits::TargetTrapFrame;
+use crate::syscall::handle_syscall;
 use riscv::interrupt::{Exception, Interrupt, Trap};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec::Stvec;
@@ -60,7 +61,12 @@ pub fn setup_trap() {
     extern "C" {
         fn _start_trap();
     }
-    unsafe { riscv::register::stvec::write(Stvec::new(_start_trap as *const () as usize, TrapMode::Direct)) }
+    unsafe {
+        riscv::register::stvec::write(Stvec::new(
+            _start_trap as *const () as usize,
+            TrapMode::Direct,
+        ))
+    }
 }
 
 #[export_name = "_handle_trap_rust"]
@@ -77,10 +83,11 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
         }
 
         Trap::Exception(Exception::UserEnvCall) => {
-            if frame.a6 == 0 {
+            if frame.a7 < (('A' as usize) * 256) {
                 println!("Received non-SBI UserEnvCall");
+                handle_syscall(frame.a7, frame.a0, frame.a1, frame.a2, frame.a3);
             } else {
-                println!("    Redirecting UserEnvCall to SBI");
+                // println!("    Redirecting UserEnvCall to SBI");
                 unsafe {
                     core::arch::asm!(
                     "ecall",
@@ -92,6 +99,7 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
                     in("a5") frame.a5,
                     in("a6") frame.a6,
                     in("a7") frame.a7,
+                    options(nostack),
                     );
                 }
             }

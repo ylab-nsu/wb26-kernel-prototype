@@ -30,7 +30,7 @@ fn riscv_main(_hart_id: usize, dtc: usize) -> ! {
 
     debug!("{KERNEL_LAYOUT:#x?}");
 
-    unsafe { asm!("csrw sscratch, sp") };
+    unsafe { asm!("csrw sscratch, sp", options(nostack)) };
     init_mmu();
     unsafe {
         riscv::interrupt::enable_interrupt(SupervisorTimer);

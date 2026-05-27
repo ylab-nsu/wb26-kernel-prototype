@@ -4,7 +4,10 @@ use crate::threading::thread::{
     get_current_thread_id, get_process, get_process_count, set_current_thread_id,
 };
 
-unsafe fn switch_thread(curr_context: &mut impl TargetContext, next_context: &mut impl TargetContext) {
+unsafe fn switch_thread(
+    curr_context: &mut impl TargetContext,
+    next_context: &mut impl TargetContext,
+) {
     extern "C" {
         fn _switch_thread(curr_context: usize, next_context: usize) -> usize;
     }
@@ -57,5 +60,6 @@ pub fn reschedule() {
         }
     };
 
+    println!("Switching from {} to {}", curr.id, next.id);
     unsafe { switch_thread(curr.context, next.context) };
 }

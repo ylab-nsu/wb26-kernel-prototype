@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![warn(unsafe_op_in_unsafe_fn)]
 
 extern crate alloc;
 
@@ -11,6 +12,7 @@ pub mod arch;
 pub mod boot;
 pub mod drivers;
 pub mod sync;
+mod syscall;
 pub mod threading;
 pub mod vm;
 
