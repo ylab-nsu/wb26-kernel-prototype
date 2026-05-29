@@ -1,3 +1,4 @@
+use crate::arch::riscv::memory::layout::KERNEL_LAYOUT;
 use crate::arch::traits::TargetPlatform;
 
 pub struct RiscvPlatform;
@@ -33,5 +34,9 @@ impl TargetPlatform for RiscvPlatform {
 
     fn micros() -> u64 {
         riscv::register::time::read64() / 10
+    }
+
+    fn get_user_va_offset() -> usize {
+        unsafe { KERNEL_LAYOUT.user_va_offset }
     }
 }

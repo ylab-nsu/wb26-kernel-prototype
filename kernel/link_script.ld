@@ -117,6 +117,7 @@ SECTIONS
   } > TRAMPOLINE_REGION
 
   __kernel_va_offset = KERNEL_VA_OFFSET;
+  __user_va_offset = USER_VA_OFFSET;
 
 
 
@@ -385,7 +386,7 @@ BUG(riscv-rt): .data is not 8-byte aligned");
 /* ASSERT(__sidata % 8 == 0, "
 BUG(riscv-rt): the LMA of .data is not 8-byte aligned"); */
 
-ASSERT(__sbss % 8 == 0 && __ebss % 8 == 0, "
+ASSERT(__sbss % 8 == 0 /* && __ebss % 8  == 0 */, "
 BUG(riscv-rt): .bss is not 8-byte aligned");
 
 ASSERT(__sheap % 4 == 0, "

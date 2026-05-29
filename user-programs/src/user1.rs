@@ -9,6 +9,4 @@ pub extern "C" fn user1() {
     }
     println!("! Result: {}", a);
     print_number(a as i32);
-    print_number(a as i32);
-    print_number(a as i32);
 }

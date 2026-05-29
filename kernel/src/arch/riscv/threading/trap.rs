@@ -1,6 +1,7 @@
 use crate::arch::traits::TargetTrapFrame;
 use crate::syscall::handle_syscall;
 use riscv::interrupt::{Exception, Interrupt, Trap};
+use crate::drivers::{put_into_queue, TestDriverMessage, TEST_DRIVER_QUEUE};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec::Stvec;
 
@@ -84,7 +85,7 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
 
         Trap::Exception(Exception::UserEnvCall) => {
             if frame.a7 < (('A' as usize) * 256) {
-                println!("Received non-SBI UserEnvCall");
+                // println!("Received non-SBI UserEnvCall");
                 handle_syscall(frame.a7, frame.a0, frame.a1, frame.a2, frame.a3);
             } else {
                 // println!("    Redirecting UserEnvCall to SBI");

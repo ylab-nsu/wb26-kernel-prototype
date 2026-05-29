@@ -20,6 +20,7 @@ pub struct KernelLayout {
     pub estack_protector: usize,
     pub estack: usize,
     pub sstack: usize,
+    pub user_va_offset: usize,
 }
 
 unsafe extern "C" {

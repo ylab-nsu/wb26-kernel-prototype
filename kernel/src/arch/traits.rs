@@ -17,6 +17,9 @@ pub trait TargetPlatform {
 
     // interrupts/excs (hooks)
     // timers
+
+    // todo: remove after switching to a sane memory manager
+    fn get_user_va_offset() -> usize;
 }
 
 pub trait TargetAddressSpace {

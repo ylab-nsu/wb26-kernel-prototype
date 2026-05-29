@@ -21,3 +21,4 @@ __kernel_layout:
     .dword __estack_protector
     .dword __estack
     .dword __sstack
+    .dword __user_va_offset
