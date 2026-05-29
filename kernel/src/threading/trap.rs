@@ -1,7 +1,5 @@
-use crate::drivers::TEST_DRIVER_QUEUE;
-use crate::threading::reschedule;
-use riscv::_export::critical_section;
 use riscv::interrupt::{Exception, Interrupt, Trap};
+use crate::drivers::{put_into_queue, TestDriverMessage, TEST_DRIVER_QUEUE};
 
 #[export_name = "_handle_trap_rust"]
 extern "C" fn handle_trap(frame: &mut crate::threading::thread::TrapFrame) -> bool {
@@ -18,7 +16,7 @@ extern "C" fn handle_trap(frame: &mut crate::threading::thread::TrapFrame) -> bo
 
         Trap::Exception(Exception::UserEnvCall) => {
             if frame.a7 < (('A' as usize) * 256) {
-                println!("Received non-SBI UserEnvCall");
+                // println!("Received non-SBI UserEnvCall");
                 handle_syscall(frame);
             } else {
                 // println!("    Redirecting UserEnvCall to SBI");
@@ -58,21 +56,17 @@ extern "C" fn handle_trap(frame: &mut crate::threading::thread::TrapFrame) -> bo
 
 fn handle_syscall(frame: &mut crate::threading::thread::TrapFrame) {
     match frame.a7 {
-        1 => loop {
-            if critical_section::with(|_| {
-                for _ in 0..2 {
-                    match TEST_DRIVER_QUEUE.enqueue(frame.a0 as i32) {
-                        Ok(()) => return true,
-                        Err(_) => {}
-                    }
-                }
-                println!("Cannot put element into queue, reschedule");
-                reschedule();
-                false
-            }) {
-                break;
-            }
-        },
+        1 => put_into_queue(
+            TestDriverMessage::PrintNumber { number: frame.a0 },
+            TEST_DRIVER_QUEUE.as_view(),
+        ),
+        2 => put_into_queue(
+            TestDriverMessage::PrintString {
+                user_addr: frame.a0,
+                len: frame.a1,
+            },
+            TEST_DRIVER_QUEUE.as_view(),
+        ),
         _ => println!("Unexpected syscall number: {}", frame.a7),
     }
 }

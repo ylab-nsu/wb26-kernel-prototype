@@ -10,3 +10,15 @@ pub(crate) fn print_number(number: i32) {
         );
     }
 }
+
+pub(crate) fn print_str(s: &str) {
+    unsafe {
+        asm!(
+        "ecall",
+        in("a0") s.as_ptr(),
+        in("a1") s.len(),
+        in("a7") 2,
+        options(nostack),
+        );
+    }
+}

@@ -12,6 +12,7 @@ pub(crate) struct KernelLayout {
     pub(crate) ebss: usize,
     pub(crate) spage_pool: usize,
     pub(crate) epage_pool: usize,
+    pub(crate) user_va_offset: usize,
 }
 
 extern "C" {

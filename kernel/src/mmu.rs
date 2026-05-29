@@ -28,9 +28,15 @@ pub(crate) fn init_mmu() {
         PAGE_POOL.mmu_pages[0].0[510] = kernel_pa;
         PAGE_POOL.mmu_pages[1].0[510] = kernel_pa;
 
-        PAGE_POOL.mmu_pages[0].0[1] = kernel_pa;
+        // One-to-one mapping of first 4 GiB
+        PAGE_POOL.mmu_pages[0].0[0] = pte_value(0 * 1<<30, 0b000111);
+        PAGE_POOL.mmu_pages[0].0[1] = pte_value(1 * 1<<30, 0b000111);
+        PAGE_POOL.mmu_pages[0].0[2] = pte_value(2 * 1<<30, 0b000111);
+        PAGE_POOL.mmu_pages[0].0[3] = pte_value(3 * 1<<30, 0b000111);
+
         let user_pa = pte_value(0x80000000, 0b011111);
         PAGE_POOL.mmu_pages[1].0[1] = user_pa;
+
         set_satp(0);
         riscv::asm::sfence_vma_all();
     }

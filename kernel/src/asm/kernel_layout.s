@@ -13,3 +13,4 @@ __kernel_layout:
     .dword __ebss
     .dword __spage_pool
     .dword __epage_pool
+    .dword __user_va_offset
