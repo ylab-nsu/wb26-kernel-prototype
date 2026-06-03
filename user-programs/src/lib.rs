@@ -4,8 +4,9 @@
 #[macro_use]
 mod print;
 mod og_processes;
-mod user1;
+mod scull_user;
 mod syscalls;
+mod user1;
 
 use core::arch::asm;
 use core::panic::PanicInfo;

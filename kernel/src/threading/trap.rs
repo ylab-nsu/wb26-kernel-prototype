@@ -1,5 +1,6 @@
-use riscv::interrupt::{Exception, Interrupt, Trap};
 use crate::drivers::{put_into_queue, TestDriverMessage, TEST_DRIVER_QUEUE};
+use crate::threading::reschedule;
+use riscv::interrupt::{Exception, Interrupt, Trap};
 
 #[export_name = "_handle_trap_rust"]
 extern "C" fn handle_trap(frame: &mut crate::threading::thread::TrapFrame) -> bool {
@@ -67,6 +68,23 @@ fn handle_syscall(frame: &mut crate::threading::thread::TrapFrame) {
             },
             TEST_DRIVER_QUEUE.as_view(),
         ),
+        3 => put_into_queue(
+            TestDriverMessage::WriteScull {
+                user_src: frame.a0,
+                scull_dst: frame.a1,
+                count: frame.a2,
+            },
+            TEST_DRIVER_QUEUE.as_view(),
+        ),
+        4 => put_into_queue(
+            TestDriverMessage::ReadScull {
+                user_dst: frame.a0,
+                scull_src: frame.a1,
+                count: frame.a2,
+            },
+            TEST_DRIVER_QUEUE.as_view(),
+        ),
+        5 => reschedule(),
         _ => println!("Unexpected syscall number: {}", frame.a7),
     }
 }

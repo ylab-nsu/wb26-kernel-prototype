@@ -22,6 +22,7 @@ global_asm!(
     "process1: .dc.a __user_process1",
     "process2: .dc.a __user_process2",
     "process3: .dc.a __user_process3",
+    "scull_user: .dc.a __user_scull_user",
 );
 
 extern "C" {
@@ -30,6 +31,7 @@ extern "C" {
     static process1: extern "C" fn();
     static process2: extern "C" fn();
     static process3: extern "C" fn();
+    static scull_user: extern "C" fn();
 }
 
 fn spawn_user_program(prog: &UserProgram) {
@@ -88,6 +90,10 @@ pub(crate) fn setup_threads() {
         },
         UserProgram {
             entry: unsafe { process3 },
+            stack_size: 64 * 1024,
+        },
+        UserProgram {
+            entry: unsafe { scull_user },
             stack_size: 64 * 1024,
         },
     ];
