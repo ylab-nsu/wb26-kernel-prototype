@@ -50,9 +50,20 @@ impl Thread {
     }
 }
 
+pub struct ProcessesIndexes {
+    pub driver_task: usize,
+    pub user_start: usize,
+}
+
 static mut PROCESSES: Vec<Thread> = Vec::new();
 
 static mut CURRENT_THREAD: usize = 0;
+
+pub static mut PROCESSES_INDEXES: ProcessesIndexes = ProcessesIndexes {
+    // These will be initialized later, but before scheduling started
+    driver_task: 1,
+    user_start: 1,
+};
 
 pub unsafe fn get_current_thread_id() -> usize {
     unsafe { CURRENT_THREAD }

@@ -1,6 +1,8 @@
 use crate::arch::traits::TargetTrapFrame;
 use crate::drivers::driver_task;
-use crate::threading::thread::{create_empty_process, get_process, spawn_kernel, spawn_user};
+use crate::threading::thread::{
+    create_empty_process, get_process, spawn_kernel, spawn_user, PROCESSES_INDEXES,
+};
 use core::arch::global_asm;
 
 pub static mut NEXT_USER_STACK: usize = 0x47000000;
@@ -52,7 +54,11 @@ pub fn setup_threads() {
 
     create_empty_process();
 
-    spawn_kernel(driver_task);
+    let driver_task_id = spawn_kernel(driver_task);
+    unsafe {
+        PROCESSES_INDEXES.driver_task = driver_task_id;
+        PROCESSES_INDEXES.user_start = driver_task_id + 1;
+    }
 
     let user_programs: [UserProgram; _] = [
         UserProgram {
