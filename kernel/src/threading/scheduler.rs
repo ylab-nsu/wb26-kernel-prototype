@@ -1,11 +1,15 @@
+use crate::drivers::TEST_DRIVER_ANY;
 use crate::mmu::set_satp;
 use crate::threading::thread::{
     get_current_thread_id, get_process, get_process_count, set_current_thread_id, Context,
+    PROCESSES_INDEXES,
 };
 
 extern "C" {
     fn _switch_thread(curr_context: &mut Context, next_context: &mut Context) -> usize;
 }
+
+static mut LAST_USER: usize = unsafe { PROCESSES_INDEXES.user_start - 1 };
 
 #[export_name = "_reschedule_rust"]
 pub(crate) fn reschedule() {
@@ -14,16 +18,22 @@ pub(crate) fn reschedule() {
     // sbi::timer::set_timer(time + 1_000).expect("Can't set timer");
 
     let next_thread = unsafe {
-        let mut checked = get_current_thread_id();
-        loop {
-            checked = if checked < get_process_count() - 1 {
-                checked + 1
-            } else {
-                0
+        if TEST_DRIVER_ANY {
+            PROCESSES_INDEXES.driver_task
+        } else {
+            let mut checked = LAST_USER;
+            let next_thread = loop {
+                checked = if checked < get_process_count() - 1 {
+                    checked + 1
+                } else {
+                    PROCESSES_INDEXES.user_start
+                };
+                if get_process(checked).valid {
+                    break checked;
+                }
             };
-            if get_process(checked).valid {
-                break checked;
-            }
+            LAST_USER = next_thread;
+            next_thread
         }
     };
 

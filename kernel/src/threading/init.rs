@@ -1,5 +1,6 @@
 use crate::drivers;
 use crate::threading::thread;
+use crate::threading::thread::PROCESSES_INDEXES;
 use core::arch::global_asm;
 use riscv::interrupt::Interrupt;
 use riscv::register::mtvec::TrapMode;
@@ -66,7 +67,11 @@ pub(crate) fn setup_threads() {
 
     thread::create_empty_process();
 
-    thread::spawn_kernel(drivers::driver_task);
+    let driver_task_id = thread::spawn_kernel(drivers::driver_task);
+    unsafe {
+        PROCESSES_INDEXES.driver_task = driver_task_id;
+        PROCESSES_INDEXES.user_start = driver_task_id;
+    }
 
     let user_programs: [UserProgram; _] = [
         UserProgram {
