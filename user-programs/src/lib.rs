@@ -4,6 +4,7 @@
 #[macro_use]
 mod print;
 mod og_processes;
+mod scull_user;
 mod syscalls;
 mod user1;
 

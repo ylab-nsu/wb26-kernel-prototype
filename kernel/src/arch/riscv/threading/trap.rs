@@ -1,7 +1,6 @@
 use crate::arch::traits::TargetTrapFrame;
 use crate::syscall::handle_syscall;
 use riscv::interrupt::{Exception, Interrupt, Trap};
-use crate::drivers::{put_into_queue, TestDriverMessage, TEST_DRIVER_QUEUE};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec::Stvec;
 
