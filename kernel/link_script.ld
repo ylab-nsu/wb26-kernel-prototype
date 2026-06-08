@@ -103,7 +103,6 @@ MEMORY
 PAGE_SIZE = 4096;
 
 HEAP_PAGES = 1;
-PAGE_POOL_PAGES = 16;
 STACK_PAGES = 128;
 
 SECTIONS
@@ -312,13 +311,12 @@ SECTIONS
     __eheap = .;
   } > KERNEL_REGION
 
-  /* fictitious region that represents the memory available for page pool */
-  .page_pool ALIGN(PAGE_SIZE) (NOLOAD) : AT(ADDR(.page_pool) - KERNEL_VA_OFFSET)
+  /* fictitious region that represents the memory available for page table pool */
+  .page_table_pool ALIGN(PAGE_SIZE) (NOLOAD) : AT(ADDR(.page_table_pool) - KERNEL_VA_OFFSET)
   {
-    __spage_pool = .;
-    . += PAGE_SIZE * PAGE_POOL_PAGES;
-    . = ALIGN(4);
-    __epage_pool = .;
+    __spage_table_pool = .;
+    KEEP(*(.page_table_pool));
+    __epage_table_pool = .;
   } > KERNEL_REGION
 
   /* fictitious region that represents the memory available for the stack */

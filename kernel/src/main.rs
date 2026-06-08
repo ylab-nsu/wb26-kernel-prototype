@@ -27,7 +27,7 @@ use core::panic::PanicInfo;
 fn main(_hart_id: usize, _dtc: usize) -> ! {
     println!("Initializing heap...");
     heap::init_heap();
-    mmu::init_mmu();
+    // mmu::init_mmu();
     thread::setup_trap();
     thread::setup_threads();
     // device_tree::handle_device_tree(_dtc);
@@ -37,7 +37,7 @@ fn main(_hart_id: usize, _dtc: usize) -> ! {
     layout::print_kernel_layout();
 
     unsafe { asm!("csrw sscratch, sp") };
-    thread::enable_threading();
+    // thread::enable_threading();
 
     // let ppa = PhysicalPageAllocator::new(0x1000);
     //

@@ -15,6 +15,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
 
 [[package]]
+name = "bit_field"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e4b40c7323adcfc0a41c4b88143ed58346ff65a288fc144329c5c45e05d70c6"
+
+[[package]]
+name = "bitfield-struct"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ca6739863c590881f038d033a146c51ddae239186a4327014839fd864f44ed5"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
+name = "bitmap-allocator"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e049fb68d423056dc7b86772dced570494e3a90f85cd4244862c02c6219fde6"
+dependencies = [
+ "bit_field",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -82,6 +108,8 @@ dependencies = [
 name = "kernel"
 version = "0.1.0"
 dependencies = [
+ "bitfield-struct",
+ "bitmap-allocator",
  "cfg-if",
  "embedded-alloc",
  "fdt-rs",
@@ -90,6 +118,7 @@ dependencies = [
  "sbi",
  "spin",
  "static_assertions",
+ "sync-unsafe-cell",
 ]
 
 [[package]]
@@ -311,6 +340,12 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "sync-unsafe-cell"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8deaecba5382c095cb432cd1e21068dadb144208f057b13720e76bf89749beb4"
 
 [[package]]
 name = "unicode-ident"

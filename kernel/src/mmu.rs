@@ -8,7 +8,7 @@ const POOL_PAGES: usize = 16;
 struct PageTable(pub [usize; 512]);
 
 extern "C" {
-    #[link_name = "__spage_pool"]
+    #[link_name = "__spage_table_pool"]
     static mut MMU_TABLE: [PageTable; 16];
 }
 

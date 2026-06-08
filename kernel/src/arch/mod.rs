@@ -4,6 +4,8 @@ use crate::arch::traits::{TargetAddressSpace, TargetPlatform};
 
 pub mod traits;
 
+mod common;
+
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "riscv64")] {
         mod riscv;

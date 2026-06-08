@@ -10,8 +10,8 @@ pub struct KernelLayout {
     pub edata: usize,
     pub sbss: usize,
     pub ebss: usize,
-    pub spage_pool: usize,
-    pub epage_pool: usize,
+    pub spage_table_pool: usize,
+    pub epage_table_pool: usize,
 }
 
 extern "C" {
@@ -36,6 +36,8 @@ pub fn print_kernel_layout() {
     unsafe {
         println!("{:x?}", kernel_layout);
         print("rodata", kernel_layout.srodata, kernel_layout.erodata);
+        debug!("Page table pool {:x} {:x}", kernel_layout.spage_table_pool, kernel_layout.epage_table_pool);
+        print("page_table_pool", kernel_layout.spage_table_pool, kernel_layout.epage_table_pool);
     }
 }
 
