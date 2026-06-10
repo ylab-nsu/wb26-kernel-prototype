@@ -2,6 +2,7 @@
 macro_rules! print {
     ($($arg:tt)*) => {{
         use core::fmt::Write;
+        use $crate::arch::traits::TargetDebugWriter;
         write!($crate::arch::DebugWriter::new(), $($arg)*).ok();
     }};
 }
@@ -10,6 +11,7 @@ macro_rules! print {
 macro_rules! println {
     ($($arg:tt)*) => {{
         use core::fmt::Write;
+        use $crate::arch::traits::TargetDebugWriter;
         writeln!($crate::arch::DebugWriter::new(), $($arg)*).ok();
     }};
 }

@@ -1,6 +1,6 @@
 use static_assertions::assert_impl_all;
 
-use crate::arch::traits::{TargetAddressSpace, TargetPlatform};
+use crate::arch::traits::{TargetAddressSpace, TargetDebugWriter, TargetPlatform};
 
 pub mod traits;
 
@@ -18,8 +18,5 @@ cfg_if::cfg_if! {
 }
 
 assert_impl_all!(Platform: TargetPlatform);
-
-assert_impl_all!(DebugWriter: core::fmt::Write);
-const _: fn() -> DebugWriter = DebugWriter::new;
-
+assert_impl_all!(DebugWriter: TargetDebugWriter);
 assert_impl_all!(AddressSpace: TargetAddressSpace);

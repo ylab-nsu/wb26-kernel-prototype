@@ -22,3 +22,7 @@ pub trait TargetAddressSpace {
 
     unsafe fn switch(&self);
 }
+
+pub trait TargetDebugWriter: core::fmt::Write {
+    fn new() -> Self;
+}

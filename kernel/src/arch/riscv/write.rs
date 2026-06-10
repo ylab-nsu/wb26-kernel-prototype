@@ -1,15 +1,16 @@
-use core::fmt::Write;
 use riscv::_export::critical_section;
+
+use crate::arch::traits::TargetDebugWriter;
 
 pub struct SbiWriter;
 
-impl SbiWriter {
-    pub fn new() -> Self {
+impl TargetDebugWriter for SbiWriter {
+    fn new() -> Self {
         SbiWriter
     }
 }
 
-impl Write for SbiWriter {
+impl core::fmt::Write for SbiWriter {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         critical_section::with(|_| {
             for b in s.bytes() {
