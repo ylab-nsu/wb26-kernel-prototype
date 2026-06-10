@@ -80,7 +80,7 @@ PROVIDE(_max_hart_id = 0);
 PROVIDE(_hart_stack_size = SIZEOF(.stack) / (_max_hart_id + 1));
 PROVIDE(_heap_size = 0); */
 
-ENTRY(__init__mmu)
+ENTRY(__riscv_init_mmu)
 
 TRAMPOLINE_LMA = 0x82000000;
 

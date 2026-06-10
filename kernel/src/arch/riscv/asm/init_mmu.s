@@ -14,8 +14,8 @@
 
 .section .trampoline.text, "ax"
 .align 4
-.global __init__mmu
-__init__mmu:
+.global __riscv_init_mmu
+__riscv_init_mmu:
     la t0, __root_mmu_table_center
     PTE_VALUE t1, 0x80000000, 0b1111
     PTE_SET_CENTER 2, t0, t1
@@ -33,7 +33,7 @@ __init__mmu:
     csrw satp, t0
     sfence.vma
 
-    #la t0, _start
+    #la t0, __riscv_start
     #jalr x0, 0(t0)
 
     #li t0, 0xffffffff82002000
@@ -43,7 +43,7 @@ __init__mmu:
     ld t0, 0(t0)
     jalr x0, 0(t0)
 1:
-    .dword _start
+    .dword __riscv_start
 
 .section .trampoline.root_table, "a"
 __root_mmu_table:

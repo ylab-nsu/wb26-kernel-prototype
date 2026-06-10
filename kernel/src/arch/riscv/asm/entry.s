@@ -1,7 +1,7 @@
 .section .init, "ax"
-.global _start
+.global __riscv_start
 
-_start:
+__riscv_start:
     .option push
     .option norelax # to prevent an unsupported R_RISCV_ALIGN relocation from being generated
 1:
@@ -75,8 +75,8 @@ _abs_start:
     csrrs x0, sstatus, t2
     fscsr x0
 
-    # Initialize FP and jump to _main
+    # Initialize FP and jump to __riscv_main
     mv fp, sp
-    la t0, _main
+    la t0, __riscv_main
     jr t0
     .cfi_endproc
