@@ -1,7 +1,7 @@
 use core::ops::{Index, IndexMut};
 
 use crate::{
-    arch::common::page_table::pool::PageTableRef,
+    arch::{PhysicalAddress, common::page_table::pool::PageTableRef},
     vm::{MappingFlags, MappingPermissions},
 };
 
@@ -11,10 +11,10 @@ pub mod pool;
 pub enum PageTableEntryStateInner {
     Invalid,
     Node {
-        phys_addr: usize,
+        phys_addr: PhysicalAddress,
     },
     Leaf {
-        phys_addr: usize,
+        phys_addr: PhysicalAddress,
         permissions: MappingPermissions,
         flags: MappingFlags,
     },
@@ -26,7 +26,7 @@ pub enum PageTableEntryState<P: TargetPageTable> {
         page_table: PageTableRef<P>,
     },
     Leaf {
-        phys_addr: usize,
+        phys_addr: PhysicalAddress,
         permissions: MappingPermissions,
         flags: MappingFlags,
     },

@@ -10,6 +10,8 @@ use crate::{
     vm::{MappingFlags, MappingPermissions},
 };
 
+use crate::arch::macros::impl_address;
+
 #[link_section = ".page_table_pool"]
 pub static PAGE_TABLE_POOL: PageTablePool<Sv39PageTable> =
     unsafe { PageTablePool::new(0x8311b000) };
@@ -32,6 +34,8 @@ pub struct Sv39VirtualAddress {
     __: usize,
 }
 
+impl_address!(Sv39VirtualAddress, u64);
+
 #[bitfield(u64)]
 pub struct Sv39PhysicalAddress {
     #[bits(12)]
@@ -47,6 +51,8 @@ pub struct Sv39PhysicalAddress {
     #[bits(8)]
     __: usize,
 }
+
+impl_address!(Sv39PhysicalAddress, u64);
 
 #[bitfield(u64)]
 pub struct Sv39PageTableEntry {
@@ -130,11 +136,11 @@ impl TargetPageTableEntry for Sv39PageTableEntry {
                 .with_ppn_1(self.ppn_1())
                 .with_ppn_2(self.ppn_2());
             return PageTableEntryStateInner::Node {
-                phys_addr: phys_addr.into_bits() as usize,
+                phys_addr,
             };
         } else {
             PageTableEntryStateInner::Leaf {
-                phys_addr: self.phys_addr().into_bits() as usize,
+                phys_addr: self.phys_addr(),
                 permissions: self.mapping_permissions(),
                 flags: self.mapping_flags(),
             }
@@ -147,8 +153,6 @@ impl TargetPageTableEntry for Sv39PageTableEntry {
                 self.0 = Sv39PageTableEntry::new().into_bits();
             }
             PageTableEntryStateInner::Node { phys_addr } => {
-                let phys_addr = Sv39PhysicalAddress::from_bits(phys_addr as u64);
-
                 let new_pte = Sv39PageTableEntry::new()
                     .with_valid(true)
                     .with_ppn_0(phys_addr.ppn_0())
@@ -162,8 +166,6 @@ impl TargetPageTableEntry for Sv39PageTableEntry {
                 flags,
                 permissions,
             } => {
-                let phys_addr = Sv39PhysicalAddress::from_bits(phys_addr as u64);
-
                 let new_pte = Sv39PageTableEntry::new()
                     .with_valid(true)
                     .with_mapping_permissions(permissions)

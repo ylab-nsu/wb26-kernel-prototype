@@ -9,10 +9,9 @@ use alloc::vec::Vec;
 use sync_unsafe_cell::SyncUnsafeCell;
 
 use crate::{
-    arch::common::page_table::{
-        alloc::PAGE_TABLE_ALLOCATOR, PageTableEntryState, PageTableEntryStateInner,
-        TargetPageTable, TargetPageTableEntry,
-    },
+    arch::{PhysicalAddress, common::page_table::{
+        PageTableEntryState, PageTableEntryStateInner, TargetPageTable, TargetPageTableEntry, alloc::PAGE_TABLE_ALLOCATOR
+    }, traits::TargetAddress},
     sync::Mutex,
     vm::{MappingFlags, MappingPermissions},
 };
@@ -20,7 +19,8 @@ use crate::{
 pub const PAGE_TABLE_POOL_ENTRIES: usize = 4;
 
 // ELIMIATE WITH HOLY FIRE
-const PAGE_TABLE_PHYS_ADDR: usize = 0x8311b000;
+// const PAGE_TABLE_PHYS_ADDR: usize = 0x8311b000;
+const PAGE_TABLE_PHYS_ADDR: PhysicalAddress = PhysicalAddress::from_bits(0x8311b000);
 
 #[derive(Debug)]
 pub struct PageTableDescriptor {
@@ -74,13 +74,12 @@ impl<P: TargetPageTable> PageTablePool<P> {
         unsafe { self.descriptors[index].assume_init_ref() }
     }
 
-    unsafe fn get_page_table_addr_from_index(&self, index: usize) -> usize {
-        (index * core::mem::size_of::<P>()) + PAGE_TABLE_PHYS_ADDR
+    unsafe fn get_page_table_addr_from_index(&self, index: usize) -> PhysicalAddress {
+        PAGE_TABLE_PHYS_ADDR.byte_add(index * core::mem::size_of::<P>())
     }
 
-    unsafe fn get_index_from_page_table_addr(&self, phys_addr: usize) -> usize {
-        debug!("{phys_addr:x}");
-        (phys_addr - PAGE_TABLE_PHYS_ADDR) / core::mem::size_of::<P>()
+    unsafe fn get_index_from_page_table_addr(&self, phys_addr: PhysicalAddress) -> usize {
+        phys_addr.byte_offset_from_unsigned(PAGE_TABLE_PHYS_ADDR) / core::mem::size_of::<P>()
     }
 
     unsafe fn create_ref_from_index(&self, index: usize) -> PageTableRef<P> {
@@ -94,7 +93,7 @@ impl<P: TargetPageTable> PageTablePool<P> {
         new_ref
     }
 
-    unsafe fn create_ref_from_page_table_addr(&self, phys_addr: usize) -> PageTableRef<P> {
+    unsafe fn create_ref_from_page_table_addr(&self, phys_addr: PhysicalAddress) -> PageTableRef<P> {
         let index = unsafe { self.get_index_from_page_table_addr(phys_addr) };
 
         unsafe { self.create_ref_from_index(index) }
@@ -130,7 +129,7 @@ pub struct PageTableRef<P: TargetPageTable> {
 }
 
 impl<P: TargetPageTable> PageTableRef<P> {
-    pub fn get_phys_addr(&self) -> usize {
+    pub fn get_phys_addr(&self) -> PhysicalAddress {
         let pool_ref = self.get_pool_ref();
         unsafe { pool_ref.get_page_table_addr_from_index(self.index) }
     }
@@ -200,7 +199,7 @@ impl<P: TargetPageTable> PageTableRef<P> {
     pub fn write_leaf(
         &self,
         index: usize,
-        phys_addr: usize,
+        phys_addr: PhysicalAddress,
         permissions: MappingPermissions,
         flags: MappingFlags,
     ) {
