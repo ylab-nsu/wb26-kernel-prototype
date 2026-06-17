@@ -34,6 +34,8 @@ pub trait TargetAddress:
     + Ord
     + Copy
     + Sized
+    + TryFrom<usize, Error: core::fmt::Debug>
+    + TryInto<usize, Error: core::fmt::Debug>
     + core::fmt::Binary
     + core::fmt::LowerHex
     + core::fmt::UpperHex

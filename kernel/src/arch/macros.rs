@@ -8,19 +8,19 @@ macro_rules! impl_address {
                     self.byte_add(count as usize)
                 }
             }
-        
+
             fn byte_add(self, count: usize) -> Self {
                 Self::from_bits(self.into_bits() + count as $V)
             }
-            
+
             fn byte_sub(self, count: usize) -> Self {
                 Self::from_bits(self.into_bits() - count as $V)
             }
-        
+
             fn byte_offset_from(&self, origin: Self) -> isize {
                 self.into_bits().wrapping_sub(origin.into_bits()) as isize
             }
-            
+
             fn byte_offset_from_unsigned(self, origin: Self) -> usize {
                 self.into_bits().wrapping_sub(origin.into_bits()) as usize
             }
@@ -45,18 +45,36 @@ macro_rules! impl_address {
                 self.into_bits() == other.into_bits()
             }
         }
-        
+
         impl Eq for $T {}
-        
+
         impl PartialOrd for $T {
             fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
                 self.into_bits().partial_cmp(&other.into_bits())
             }
         }
-        
+
         impl Ord for $T {
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
                 self.into_bits().cmp(&other.into_bits())
+            }
+        }
+
+        impl TryFrom<usize> for $T {
+            type Error = core::num::TryFromIntError;
+
+            fn try_from(value: usize) -> Result<Self, Self::Error> {
+                let inner = value.try_into()?;
+                Ok($T::from_bits(inner))
+            }
+        }
+
+        impl TryInto<usize> for $T {
+            type Error = core::num::TryFromIntError;
+
+            fn try_into(self) -> Result<usize, Self::Error> {
+                let outer = self.into_bits().try_into()?;
+                Ok(outer)
             }
         }
 
