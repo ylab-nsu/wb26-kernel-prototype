@@ -1,5 +1,8 @@
 macro_rules! impl_address {
     ($T:ident, $V:ty) => {
+        const _: fn($V) -> $T = $T::from_bits;
+        const _: fn($T) -> $V = $T::into_bits;
+
         impl $crate::arch::traits::TargetAddress for $T {
             fn byte_offset(self, count: isize) -> Self {
                 if count < 0 {
@@ -30,7 +33,7 @@ macro_rules! impl_address {
             /// Convenience method for checking if an address is null.
             #[inline]
             pub const fn is_null(self) -> bool {
-                self.0 == 0
+                self.into_bits() == 0
             }
 
             /// Creates an address that points to `0`.
@@ -81,35 +84,35 @@ macro_rules! impl_address {
         impl core::fmt::Binary for $T {
             #[inline]
             fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                core::fmt::Binary::fmt(&self.0, f)
+                core::fmt::Binary::fmt(&self.into_bits(), f)
             }
         }
 
         impl core::fmt::LowerHex for $T {
             #[inline]
             fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                core::fmt::LowerHex::fmt(&self.0, f)
+                core::fmt::LowerHex::fmt(&self.into_bits(), f)
             }
         }
 
         impl core::fmt::Octal for $T {
             #[inline]
             fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                core::fmt::Octal::fmt(&self.0, f)
+                core::fmt::Octal::fmt(&self.into_bits(), f)
             }
         }
 
         impl core::fmt::UpperHex for $T {
             #[inline]
             fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                core::fmt::UpperHex::fmt(&self.0, f)
+                core::fmt::UpperHex::fmt(&self.into_bits(), f)
             }
         }
 
         impl core::fmt::Pointer for $T {
             #[inline]
             fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                core::fmt::Pointer::fmt(&(self.0 as *const ()), f)
+                core::fmt::Pointer::fmt(&(self.into_bits() as *const ()), f)
             }
         }
     };
