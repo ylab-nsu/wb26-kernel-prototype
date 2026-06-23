@@ -7,6 +7,7 @@ extern crate alloc;
 #[macro_use]
 mod print;
 
+pub mod allocator;
 pub mod arch;
 pub mod device_tree;
 pub mod heap;
