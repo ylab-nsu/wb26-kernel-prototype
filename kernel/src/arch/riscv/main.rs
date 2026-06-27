@@ -10,7 +10,9 @@ fn riscv_main(_hart_id: usize, _dtc: usize) -> ! {
     thread::setup_trap();
     thread::setup_threads();
     // device_tree::handle_device_tree(_dtc);
-
+    
+    unsafe { PhysicalAllocator::init(PhysicalAddress::from_bits(0x8000_0000), 4096 * 4096) };
+    
     println!("I am virtual {:x?}!", riscv::register::satp::read());
 
     layout::print_kernel_layout();

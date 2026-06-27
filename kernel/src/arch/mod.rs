@@ -1,6 +1,9 @@
 use static_assertions::assert_impl_all;
 
-use crate::arch::traits::{TargetAddress, TargetAddressSpace, TargetDebugWriter, TargetPlatform};
+use crate::arch::traits::{
+    TargetAddress, TargetAddressSpace, TargetDebugWriter, TargetPhysicalAllocation,
+    TargetPhysicalAllocator, TargetPlatform,
+};
 
 pub mod traits;
 
@@ -12,6 +15,8 @@ cfg_if::cfg_if! {
         mod riscv;
         pub type VirtualAddress = riscv::mmu::Sv39VirtualAddress;
         pub type PhysicalAddress = riscv::mmu::Sv39PhysicalAddress;
+        pub type PhysicalAllocator = riscv::alloc::phys::RiscvPhysicalAllocator;
+        pub type PhysicalAllocation = riscv::alloc::RiscvPhysicalAllocation;
         pub type Platform = riscv::platform::RiscvPlatform;
         pub type DebugWriter = riscv::write::SbiWriter;
         pub type AddressSpace = riscv::vm::RiscvSv39AddressSpace;
@@ -22,6 +27,8 @@ cfg_if::cfg_if! {
 
 assert_impl_all!(VirtualAddress: TargetAddress);
 assert_impl_all!(PhysicalAddress: TargetAddress);
+assert_impl_all!(PhysicalAllocator: TargetPhysicalAllocator);
+assert_impl_all!(PhysicalAllocation: TargetPhysicalAllocation);
 assert_impl_all!(Platform: TargetPlatform);
 assert_impl_all!(DebugWriter: TargetDebugWriter);
 assert_impl_all!(AddressSpace: TargetAddressSpace);

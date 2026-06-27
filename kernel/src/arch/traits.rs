@@ -1,4 +1,6 @@
-use crate::vm::{MapperError, Mapping, MappingFlags};
+use crate::{
+    allocator::AllocatorError, arch::{PhysicalAddress, PhysicalAllocation, VirtualAddress}, vm::{MapperError, Mapping, MappingFlags},
+};
 
 pub trait TargetPlatform {
     fn init();
@@ -47,4 +49,15 @@ pub trait TargetAddress:
     fn byte_offset(self, count: isize) -> Self;
     fn byte_offset_from(&self, origin: Self) -> isize;
     fn byte_offset_from_unsigned(self, origin: Self) -> usize;
+}
+
+pub trait TargetPhysicalAllocator {
+    fn alloc_contiguous(size: usize) -> Result<PhysicalAllocation, AllocatorError>;
+    fn alloc_contiguous_aligned(size: usize, alignment: usize) -> Result<PhysicalAllocation, AllocatorError>;
+    fn alloc_contiguous_at(addr: PhysicalAddress, size: usize) -> Result<PhysicalAllocation, AllocatorError>;
+}
+
+pub trait TargetPhysicalAllocation: core::fmt::Debug + core::fmt::Display {
+    fn addr(&self) -> PhysicalAddress;
+    fn size(&self) -> usize;
 }

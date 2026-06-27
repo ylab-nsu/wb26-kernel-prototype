@@ -16,6 +16,8 @@ use crate::arch::macros::impl_address;
 pub static PAGE_TABLE_POOL: PageTablePool<Sv39PageTable> =
     unsafe { PageTablePool::new(0x8311b000) };
 
+pub const PAGE_SIZE: usize = 4096;
+
 const PAGE_TABLE_ENTRIES: usize = 512;
 
 #[bitfield(u64)]
