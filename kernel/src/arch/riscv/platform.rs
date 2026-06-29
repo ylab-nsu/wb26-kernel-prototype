@@ -20,6 +20,6 @@ impl TargetPlatform for RiscvPlatform {
     }
 
     fn wfi() {
-        todo!()
+        riscv::asm::wfi();
     }
 }

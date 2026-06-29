@@ -20,9 +20,14 @@ pub mod vm;
 
 use core::panic::PanicInfo;
 
+use crate::arch::{traits::TargetPlatform, Platform};
+
 pub fn kernel_main() -> ! {
     info!("Starting kernel (kernel_main())");
-    loop {}
+
+    loop {
+        Platform::wfi();
+    }
 }
 
 #[panic_handler]
