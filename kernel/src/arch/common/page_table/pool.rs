@@ -9,9 +9,14 @@ use alloc::vec::Vec;
 use sync_unsafe_cell::SyncUnsafeCell;
 
 use crate::{
-    arch::{PhysicalAddress, common::page_table::{
-        PageTableEntryState, PageTableEntryStateInner, TargetPageTable, TargetPageTableEntry, alloc::PAGE_TABLE_ALLOCATOR
-    }, traits::TargetAddress},
+    arch::{
+        common::page_table::{
+            alloc::PAGE_TABLE_ALLOCATOR, PageTableEntryState, PageTableEntryStateInner,
+            TargetPageTable, TargetPageTableEntry,
+        },
+        traits::TargetAddress,
+        PhysicalAddress,
+    },
     sync::Mutex,
     vm::{MappingFlags, MappingPermissions},
 };
@@ -36,9 +41,11 @@ pub struct PageTablePool<P: TargetPageTable> {
 
 impl<P: TargetPageTable> Debug for PageTablePool<P> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let descriptors: Vec<usize> = self.descriptors.iter().map(|x| {
-            unsafe { x.assume_init_ref() }.lock().num_refs
-        }).collect();
+        let descriptors: Vec<usize> = self
+            .descriptors
+            .iter()
+            .map(|x| unsafe { x.assume_init_ref() }.lock().num_refs)
+            .collect();
 
         f.debug_struct("PageTablePool")
             .field("descriptors", &descriptors)
@@ -93,7 +100,10 @@ impl<P: TargetPageTable> PageTablePool<P> {
         new_ref
     }
 
-    unsafe fn create_ref_from_page_table_addr(&self, phys_addr: PhysicalAddress) -> PageTableRef<P> {
+    unsafe fn create_ref_from_page_table_addr(
+        &self,
+        phys_addr: PhysicalAddress,
+    ) -> PageTableRef<P> {
         let index = unsafe { self.get_index_from_page_table_addr(phys_addr) };
 
         unsafe { self.create_ref_from_index(index) }

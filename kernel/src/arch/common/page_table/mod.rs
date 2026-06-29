@@ -1,7 +1,7 @@
 use core::ops::{Index, IndexMut};
 
 use crate::{
-    arch::{PhysicalAddress, common::page_table::pool::PageTableRef},
+    arch::{common::page_table::pool::PageTableRef, PhysicalAddress},
     vm::{MappingFlags, MappingPermissions},
 };
 
