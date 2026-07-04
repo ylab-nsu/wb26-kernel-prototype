@@ -8,6 +8,7 @@ pub trait TargetPlatform {
     fn sleep();
     fn shutdown();
     fn wfi();
+    fn micros() -> u64;
     // ...
 
     // interrupts/excs (hooks)

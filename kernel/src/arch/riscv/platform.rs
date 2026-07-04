@@ -22,4 +22,8 @@ impl TargetPlatform for RiscvPlatform {
     fn wfi() {
         riscv::asm::wfi();
     }
+
+    fn micros() -> u64 {
+        riscv::register::time::read64() / 10
+    }
 }
