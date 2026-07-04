@@ -17,9 +17,11 @@ macro_rules! println {
 }
 
 macro_rules! rich_println {
-    ($prefix:tt, $($arg:tt)*) => {
-        println!("{:8} {}:{}:{} - {}", $prefix, file!(), line!(), column!(), format_args!($($arg)*));
-    };
+    ($prefix:tt, $($arg:tt)*) => {{
+        use $crate::arch::Platform;
+        use $crate::arch::traits::TargetPlatform;
+        println!("[{:.6}] {:8} {}:{}:{} - {}", Platform::micros() as f32 / 1_000_000f32, $prefix, file!(), line!(), column!(), format_args!($($arg)*));
+    }};
 }
 
 #[macro_export]
