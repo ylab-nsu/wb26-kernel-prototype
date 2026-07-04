@@ -13,7 +13,6 @@ pub mod device_tree;
 pub mod heap;
 pub mod layout;
 pub mod mmu;
-pub mod paging;
 pub mod sync;
 pub mod thread;
 pub mod vm;
