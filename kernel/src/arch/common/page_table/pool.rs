@@ -25,7 +25,7 @@ pub const PAGE_TABLE_POOL_ENTRIES: usize = 4;
 
 // ELIMIATE WITH HOLY FIRE
 // const PAGE_TABLE_PHYS_ADDR: usize = 0x8311b000;
-const PAGE_TABLE_PHYS_ADDR: PhysicalAddress = PhysicalAddress::from_bits(0x8311b000);
+const PAGE_TABLE_PHYS_ADDR: PhysicalAddress = PhysicalAddress::from_bits(0x83123000);
 
 #[derive(Debug)]
 pub struct PageTableDescriptor {
@@ -275,6 +275,19 @@ impl<P: TargetPageTable> PageTableRef<P> {
                 PageTableEntryState::Invalid => PageTableEntryStateInner::Invalid,
                 _ => todo!(),
             },
+        }
+    }
+
+    pub fn get_next_level_table(&self, index: usize) -> Option<PageTableRef<P>> {
+        match self.read_state(index) {
+            PageTableEntryState::Invalid => {
+                let page_table = self.get_pool_ref().alloc_page_table();
+                self.write_node(index, page_table.clone());
+
+                Some(page_table)
+            }
+            PageTableEntryState::Node { page_table } => Some(page_table),
+            PageTableEntryState::Leaf { .. } => None,
         }
     }
 }

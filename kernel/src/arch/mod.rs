@@ -1,8 +1,7 @@
 use static_assertions::assert_impl_all;
 
 use crate::arch::traits::{
-    TargetAddress, TargetAddressSpace, TargetDebugWriter, TargetPhysicalAllocation,
-    TargetPhysicalAllocator, TargetPlatform,
+    TargetAddress, TargetAddressSpace, TargetDebugWriter, TargetMapping, TargetPhysicalAllocation, TargetPhysicalAllocator, TargetPlatform,
 };
 
 pub mod traits;
@@ -13,13 +12,14 @@ mod macros;
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "riscv64")] {
         mod riscv;
-        pub type VirtualAddress = riscv::mmu::Sv39VirtualAddress;
-        pub type PhysicalAddress = riscv::mmu::Sv39PhysicalAddress;
+        pub type VirtualAddress = riscv::memory::Sv39VirtualAddress;
+        pub type PhysicalAddress = riscv::memory::Sv39PhysicalAddress;
         pub type PhysicalAllocator = riscv::alloc::phys::RiscvPhysicalAllocator;
         pub type PhysicalAllocation = riscv::alloc::RiscvPhysicalAllocation;
         pub type Platform = riscv::platform::RiscvPlatform;
         pub type DebugWriter = riscv::write::SbiWriter;
-        pub type AddressSpace = riscv::vm::RiscvSv39AddressSpace;
+        pub type AddressSpace = riscv::memory::address_space::Sv39AddressSpace;
+        pub type Mapping = riscv::memory::address_space::Sv39Mapping;
     } else {
         compile_error!("Unsupported platform");
     }
@@ -32,3 +32,4 @@ assert_impl_all!(PhysicalAllocation: TargetPhysicalAllocation);
 assert_impl_all!(Platform: TargetPlatform);
 assert_impl_all!(DebugWriter: TargetDebugWriter);
 assert_impl_all!(AddressSpace: TargetAddressSpace);
+assert_impl_all!(Mapping: TargetMapping);

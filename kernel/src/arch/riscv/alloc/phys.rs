@@ -3,7 +3,7 @@ use bitmap_allocator::BitAlloc64K;
 use crate::{
     allocator::{bitmap::BitmapMemoryAllocator, AllocatorError},
     arch::{
-        riscv::alloc::RiscvPhysicalAllocation, riscv::mmu::PAGE_SIZE,
+        riscv::alloc::RiscvPhysicalAllocation, riscv::memory::PAGE_SIZE,
         traits::TargetPhysicalAllocator, PhysicalAddress, PhysicalAllocation,
     },
     sync::{Mutex, Once},

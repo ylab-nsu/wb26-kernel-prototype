@@ -3,58 +3,14 @@ use core::ops::{Index, IndexMut};
 use bitfield_struct::bitfield;
 
 use crate::{
-    arch::common::page_table::{
-        pool::PageTablePool, PageTableEntryState, PageTableEntryStateInner, TargetPageTable,
-        TargetPageTableEntry,
+    arch::{
+        common::page_table::{PageTableEntryStateInner, TargetPageTable, TargetPageTableEntry},
+        riscv::memory::Sv39PhysicalAddress,
     },
     vm::{MappingFlags, MappingPermissions},
 };
 
-use crate::arch::macros::impl_address;
-
-#[link_section = ".page_table_pool"]
-pub static PAGE_TABLE_POOL: PageTablePool<Sv39PageTable> =
-    unsafe { PageTablePool::new(0x8311b000) };
-
-pub const PAGE_SIZE: usize = 4096;
-
 const PAGE_TABLE_ENTRIES: usize = 512;
-
-#[bitfield(u64)]
-pub struct Sv39VirtualAddress {
-    #[bits(12)]
-    offset: usize,
-
-    #[bits(9)]
-    vpn_0: usize,
-    #[bits(9)]
-    vpn_1: usize,
-    #[bits(9)]
-    vpn_2: usize,
-
-    #[bits(25)]
-    __: usize,
-}
-
-impl_address!(Sv39VirtualAddress, u64);
-
-#[bitfield(u64)]
-pub struct Sv39PhysicalAddress {
-    #[bits(12)]
-    offset: usize,
-
-    #[bits(9)]
-    ppn_0: usize,
-    #[bits(9)]
-    ppn_1: usize,
-    #[bits(26)]
-    ppn_2: usize,
-
-    #[bits(8)]
-    __: usize,
-}
-
-impl_address!(Sv39PhysicalAddress, u64);
 
 #[bitfield(u64)]
 pub struct Sv39PageTableEntry {
@@ -132,14 +88,12 @@ impl TargetPageTableEntry for Sv39PageTableEntry {
     fn read_state(&self) -> PageTableEntryStateInner {
         if !self.valid() {
             return PageTableEntryStateInner::Invalid;
-        } else if !(self.read() && self.write() && self.execute()) {
+        } else if !(self.read() || self.write() || self.execute()) {
             let phys_addr = Sv39PhysicalAddress::new()
                 .with_ppn_0(self.ppn_0())
                 .with_ppn_1(self.ppn_1())
                 .with_ppn_2(self.ppn_2());
-            return PageTableEntryStateInner::Node {
-                phys_addr,
-            };
+            return PageTableEntryStateInner::Node { phys_addr };
         } else {
             PageTableEntryStateInner::Leaf {
                 phys_addr: self.phys_addr(),

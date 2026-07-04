@@ -1,5 +1,5 @@
 use crate::{
-    allocator::AllocatorError, arch::{PhysicalAddress, PhysicalAllocation, VirtualAddress}, vm::{MapperError, Mapping, MappingFlags},
+    allocator::AllocatorError, arch::{Mapping, PhysicalAddress, PhysicalAllocation, VirtualAddress}, vm::{MappingFlags, MappingPermissions},
 };
 
 pub trait TargetPlatform {
@@ -15,14 +15,23 @@ pub trait TargetPlatform {
 }
 
 pub trait TargetAddressSpace {
-    type PhysicalAddress;
-    type VirtualAddress;
-
-    fn map(&mut self, vaddr: Self::VirtualAddress, paddr: Self::PhysicalAddress, flags: MappingFlags) -> Result<Mapping, MapperError>;
-    
-    unsafe fn unmap(&mut self, mapping: &Mapping);
+    fn map(
+        &mut self,
+        virt_addr: VirtualAddress,
+        phys_alloc: PhysicalAllocation,
+        permissions: MappingPermissions,
+        flags: MappingFlags,
+    ) -> Mapping;
 
     unsafe fn switch(&self);
+}
+
+pub trait TargetMapping {
+    fn virt_addr(&self) -> VirtualAddress;
+    fn phys_addr(&self) -> PhysicalAddress;
+    fn size(&self) -> usize;
+    fn permissions(&self) -> MappingPermissions;
+    fn flags(&self) -> MappingFlags;
 }
 
 pub trait TargetDebugWriter: core::fmt::Write {
