@@ -10,8 +10,14 @@ pub struct KernelLayout {
     pub edata: usize,
     pub sbss: usize,
     pub ebss: usize,
+    pub suninit: usize,
+    pub euninit: usize,
+    pub sheap: usize,
+    pub eheap: usize,
     pub spage_table_pool: usize,
     pub epage_table_pool: usize,
+    pub estack: usize,
+    pub sstack: usize,
 }
 
 extern "C" {

@@ -11,5 +11,11 @@ __kernel_layout:
     .dword __edata
     .dword __sbss
     .dword __ebss
+    .dword __suninit
+    .dword __euninit
+    .dword __sheap
+    .dword __eheap
     .dword __spage_table_pool
     .dword __epage_table_pool
+    .dword __estack
+    .dword __sstack
