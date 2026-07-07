@@ -1,7 +1,7 @@
 use core::arch::asm;
 
 use crate::{
-    arch::{PhysicalAddress, PhysicalAllocator, riscv::memory}, kernel_main, thread,
+    arch::{PhysicalAddress, PhysicalAllocator, riscv::memory::{self, layout::KERNEL_LAYOUT}}, kernel_main, thread,
 };
 
 #[export_name = "__riscv_main"]
@@ -17,7 +17,7 @@ fn riscv_main(_hart_id: usize, _dtc: usize) -> ! {
 
     println!("I am virtual {:x?}!", riscv::register::satp::read());
 
-    // layout::print_kernel_layout();
+    debug!("{KERNEL_LAYOUT:#x?}");
 
     unsafe { asm!("csrw sscratch, sp") };
     // thread::enable_threading();
