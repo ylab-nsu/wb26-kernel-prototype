@@ -16,6 +16,8 @@ pub struct KernelLayout {
     pub eheap: usize,
     pub spage_table_pool: usize,
     pub epage_table_pool: usize,
+    pub sstack_protector: usize,
+    pub estack_protector: usize,
     pub estack: usize,
     pub sstack: usize,
 }

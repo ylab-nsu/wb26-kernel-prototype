@@ -322,7 +322,9 @@ SECTIONS
   .stack ALIGN(PAGE_SIZE) (NOLOAD) : AT(ADDR(.stack) - KERNEL_VA_OFFSET)
   {
     /* Page for stack protection */
+    __sstack_protector = .;
     . += PAGE_SIZE;
+    __estack_protector = .;
     __estack = .;
     KEEP(*(.stack));
     . = ALIGN(16);

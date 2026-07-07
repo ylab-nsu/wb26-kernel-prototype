@@ -17,5 +17,7 @@ __kernel_layout:
     .dword __eheap
     .dword __spage_table_pool
     .dword __epage_table_pool
+    .dword __sstack_protector
+    .dword __estack_protector
     .dword __estack
     .dword __sstack
