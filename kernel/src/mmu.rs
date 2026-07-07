@@ -1,4 +1,4 @@
-use crate::layout::kernel_layout;
+// use crate::layout::kernel_layout;
 use core::ptr::addr_of;
 use riscv::register::satp;
 
@@ -13,15 +13,16 @@ extern "C" {
 }
 
 pub unsafe fn set_satp(number: usize) {
-    let a = kernel_layout.kernel_va_offset;
-    let b = addr_of!(MMU_TABLE[number]) as usize;
-    let c = (b - a) >> 12;
-    satp::set(
-        satp::Mode::Sv39,
-        number,
-        c
-        // (addr_of!(MMU_TABLE[number]) as usize - kernel_layout.kernel_va_offset) >> 12,
-    );
+    todo!();
+    // let a = kernel_layout.kernel_va_offset;
+    // let b = addr_of!(MMU_TABLE[number]) as usize;
+    // let c = (b - a) >> 12;
+    // satp::set(
+    //     satp::Mode::Sv39,
+    //     number,
+    //     c
+    //     // (addr_of!(MMU_TABLE[number]) as usize - kernel_layout.kernel_va_offset) >> 12,
+    // );
 }
 
 #[inline]

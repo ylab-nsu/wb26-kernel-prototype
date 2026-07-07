@@ -10,8 +10,6 @@ mod print;
 pub mod allocator;
 pub mod arch;
 pub mod device_tree;
-pub mod heap;
-pub mod layout;
 pub mod mmu;
 pub mod sync;
 pub mod thread;

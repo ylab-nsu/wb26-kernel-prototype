@@ -1,14 +1,13 @@
 use core::arch::asm;
 
 use crate::{
-    arch::{PhysicalAddress, PhysicalAllocator},
-    heap, kernel_main, layout, thread,
+    arch::{PhysicalAddress, PhysicalAllocator, riscv::memory}, kernel_main, thread,
 };
 
 #[export_name = "__riscv_main"]
 fn riscv_main(_hart_id: usize, _dtc: usize) -> ! {
     println!("Initializing heap...");
-    heap::init_heap();
+    memory::heap::init_heap();
     // mmu::init_mmu();
     thread::setup_trap();
     thread::setup_threads();
@@ -18,7 +17,7 @@ fn riscv_main(_hart_id: usize, _dtc: usize) -> ! {
 
     println!("I am virtual {:x?}!", riscv::register::satp::read());
 
-    layout::print_kernel_layout();
+    // layout::print_kernel_layout();
 
     unsafe { asm!("csrw sscratch, sp") };
     // thread::enable_threading();
