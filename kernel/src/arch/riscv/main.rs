@@ -6,8 +6,9 @@ use crate::{
 
 #[export_name = "__riscv_main"]
 fn riscv_main(_hart_id: usize, _dtc: usize) -> ! {
-    println!("Initializing heap...");
+    debug!("Initializing heap...");
     memory::heap::init_heap();
+    memory::stack::init_stack();
     // mmu::init_mmu();
     thread::setup_trap();
     thread::setup_threads();

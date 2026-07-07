@@ -102,8 +102,8 @@ MEMORY
 
 PAGE_SIZE = 4096;
 
-HEAP_PAGES = 1;
-STACK_PAGES = 128;
+USER_HEAP_PAGES = 1;
+USER_STACK_PAGES = 128;
 
 SECTIONS
 {
@@ -195,7 +195,7 @@ SECTIONS
   {
     __suheap = .;
     /* . += _heap_size; */
-    . += PAGE_SIZE * HEAP_PAGES;
+    . += PAGE_SIZE * USER_HEAP_PAGES;
     . = ALIGN(4);
     __euheap = .;
   } > USER_REGION
@@ -207,7 +207,7 @@ SECTIONS
     . = ALIGN(PAGE_SIZE);
     . += PAGE_SIZE * 10;
     __eustack = .;
-    . += PAGE_SIZE * STACK_PAGES;
+    . += PAGE_SIZE * USER_STACK_PAGES;
     /* . = ABSOLUTE(_stack_start); */
     __sustack = .;
   } > USER_REGION
@@ -305,9 +305,8 @@ SECTIONS
   .heap ALIGN(PAGE_SIZE) (NOLOAD) : AT(ADDR(.heap) - KERNEL_VA_OFFSET)
   {
     __sheap = .;
-    /* . += _heap_size; */
-    . += PAGE_SIZE * HEAP_PAGES;
-    . = ALIGN(4);
+    KEEP(*(.heap));
+    . = ALIGN(8);
     __eheap = .;
   } > KERNEL_REGION
 
@@ -323,11 +322,10 @@ SECTIONS
   .stack ALIGN(PAGE_SIZE) (NOLOAD) : AT(ADDR(.stack) - KERNEL_VA_OFFSET)
   {
     /* Page for stack protection */
-    . = ALIGN(PAGE_SIZE);
-    . += PAGE_SIZE * 10;
+    . += PAGE_SIZE;
     __estack = .;
-    . += PAGE_SIZE * STACK_PAGES;
-    /* . = ABSOLUTE(_stack_start); */
+    KEEP(*(.stack));
+    . = ALIGN(16);
     __sstack = .;
   } > KERNEL_REGION
 
