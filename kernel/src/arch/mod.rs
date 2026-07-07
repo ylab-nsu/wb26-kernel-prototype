@@ -12,14 +12,14 @@ mod macros;
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "riscv64")] {
         mod riscv;
-        pub type VirtualAddress = riscv::memory::Sv39VirtualAddress;
-        pub type PhysicalAddress = riscv::memory::Sv39PhysicalAddress;
+        pub type VirtualAddress = riscv::vm::Sv39VirtualAddress;
+        pub type PhysicalAddress = riscv::vm::Sv39PhysicalAddress;
         pub type PhysicalAllocator = riscv::alloc::phys::RiscvPhysicalAllocator;
         pub type PhysicalAllocation = riscv::alloc::RiscvPhysicalAllocation;
         pub type Platform = riscv::platform::RiscvPlatform;
         pub type DebugWriter = riscv::write::SbiWriter;
-        pub type AddressSpace = riscv::memory::address_space::Sv39AddressSpace;
-        pub type Mapping = riscv::memory::address_space::Sv39Mapping;
+        pub type AddressSpace = riscv::vm::address_space::Sv39AddressSpace;
+        pub type Mapping = riscv::vm::address_space::Sv39Mapping;
     } else {
         compile_error!("Unsupported platform");
     }

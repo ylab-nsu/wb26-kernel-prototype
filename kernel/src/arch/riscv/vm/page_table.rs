@@ -5,7 +5,7 @@ use bitfield_struct::bitfield;
 use crate::{
     arch::{
         common::page_table::{PageTableEntryStateInner, TargetPageTable, TargetPageTableEntry},
-        riscv::memory::Sv39PhysicalAddress,
+        riscv::vm::Sv39PhysicalAddress,
     },
     vm::{MappingFlags, MappingPermissions},
 };

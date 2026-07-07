@@ -3,7 +3,7 @@ use core::ptr::NonNull;
 use crate::{
     arch::{
         common::page_table::pool::{PageTablePool, PageTableRef},
-        riscv::memory::{page_table::Sv39PageTable, PAGE_SIZE},
+        riscv::vm::{page_table::Sv39PageTable, PAGE_SIZE},
         traits::{TargetAddress, TargetAddressSpace, TargetMapping, TargetPhysicalAllocation},
         Mapping, PhysicalAddress, PhysicalAllocation, VirtualAddress,
     },
