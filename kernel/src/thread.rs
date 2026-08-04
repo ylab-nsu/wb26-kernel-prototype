@@ -1,9 +1,9 @@
+use crate::arch::set_satp;
 use alloc::vec::Vec;
 use riscv::interrupt::Interrupt::SupervisorTimer;
 use riscv::interrupt::{Exception, Interrupt, Trap};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec::Stvec;
-use crate::mmu::set_satp;
 
 #[repr(C)]
 #[derive(Debug, Default, Clone)]

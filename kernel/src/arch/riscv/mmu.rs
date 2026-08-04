@@ -1,4 +1,4 @@
-// use crate::layout::kernel_layout;
+use crate::arch::riscv::memory::layout::KERNEL_LAYOUT;
 use core::ptr::addr_of;
 use riscv::register::satp;
 
@@ -8,21 +8,20 @@ const POOL_PAGES: usize = 16;
 struct PageTable(pub [usize; 512]);
 
 extern "C" {
-    #[link_name = "__spage_table_pool"]
+    #[link_name = "__s_temp_mmu_table"]
     static mut MMU_TABLE: [PageTable; 16];
 }
 
 pub unsafe fn set_satp(number: usize) {
-    todo!();
-    // let a = kernel_layout.kernel_va_offset;
-    // let b = addr_of!(MMU_TABLE[number]) as usize;
-    // let c = (b - a) >> 12;
-    // satp::set(
-    //     satp::Mode::Sv39,
-    //     number,
-    //     c
-    //     // (addr_of!(MMU_TABLE[number]) as usize - kernel_layout.kernel_va_offset) >> 12,
-    // );
+    // todo!();
+    let a = KERNEL_LAYOUT.kernel_va_offset;
+    let b = addr_of!(MMU_TABLE[number]) as usize;
+    let c = (b - a) >> 12;
+    satp::set(
+        satp::Mode::Sv39,
+        number,
+        c, // (addr_of!(MMU_TABLE[number]) as usize - kernel_layout.kernel_va_offset) >> 12,
+    );
 }
 
 #[inline]

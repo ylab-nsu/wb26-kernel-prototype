@@ -1,7 +1,8 @@
 use static_assertions::assert_impl_all;
 
 use crate::arch::traits::{
-    TargetAddress, TargetAddressSpace, TargetDebugWriter, TargetMapping, TargetPhysicalAllocation, TargetPhysicalAllocator, TargetPlatform,
+    TargetAddress, TargetAddressSpace, TargetDebugWriter, TargetMapping, TargetPhysicalAllocation,
+    TargetPhysicalAllocator, TargetPlatform,
 };
 
 pub mod traits;
@@ -20,6 +21,8 @@ cfg_if::cfg_if! {
         pub type DebugWriter = riscv::write::SbiWriter;
         pub type AddressSpace = riscv::vm::address_space::Sv39AddressSpace;
         pub type Mapping = riscv::vm::address_space::Sv39Mapping;
+
+        pub use riscv::mmu::set_satp;
     } else {
         compile_error!("Unsupported platform");
     }

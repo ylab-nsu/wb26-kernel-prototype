@@ -316,6 +316,9 @@ SECTIONS
     __spage_table_pool = .;
     KEEP(*(.page_table_pool));
     __epage_table_pool = .;
+    __s_temp_mmu_table = .;
+    . += PAGE_SIZE * 32;
+    __e_temp_mmu_table = .;
   } > KERNEL_REGION
 
   /* fictitious region that represents the memory available for the stack */

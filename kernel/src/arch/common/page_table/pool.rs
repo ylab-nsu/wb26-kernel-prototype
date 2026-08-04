@@ -16,7 +16,7 @@ use crate::{
     }, sync::{Mutex, Once}, vm::{MappingFlags, MappingPermissions},
 };
 
-pub const PAGE_TABLE_POOL_ENTRIES: usize = 4;
+pub const PAGE_TABLE_POOL_ENTRIES: usize = 64;
 
 #[derive(Debug)]
 pub struct PageTableDescriptor {

@@ -12,6 +12,7 @@ use crate::{
         }, traits::TargetAddressSpace,
     }, boot::BootContext, kernel_main, thread,
 };
+use crate::arch::riscv::mmu::init_mmu;
 
 #[export_name = "__riscv_main"]
 fn riscv_main(_hart_id: usize, dtc: usize) -> ! {
@@ -34,15 +35,16 @@ fn riscv_main(_hart_id: usize, dtc: usize) -> ! {
     debug!("{KERNEL_LAYOUT:#x?}");
 
     unsafe { asm!("csrw sscratch, sp") };
-    // thread::enable_threading();
+    init_mmu();
+    thread::enable_threading();
 
     let mut address_space = AddressSpace::new();
 
     let mappings = map_kernel_sections(&mut address_space);
 
-    unsafe {
-        address_space.switch();
-    }
+    // unsafe {
+    //     address_space.switch();
+    // }
 
     let boot_context = BootContext {
         address_space,

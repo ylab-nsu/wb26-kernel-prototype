@@ -10,14 +10,16 @@ mod print;
 pub mod allocator;
 pub mod arch;
 pub mod boot;
-pub mod mmu;
 pub mod sync;
 pub mod thread;
 pub mod vm;
 
 use core::panic::PanicInfo;
 
-use crate::{arch::{Platform, traits::TargetPlatform}, boot::BootContext};
+use crate::{
+    arch::{traits::TargetPlatform, Platform},
+    boot::BootContext,
+};
 
 pub fn kernel_main(_ctx: BootContext) -> ! {
     info!("Starting kernel (kernel_main())");
