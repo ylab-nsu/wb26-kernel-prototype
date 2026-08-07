@@ -23,6 +23,14 @@ impl TargetPlatform for RiscvPlatform {
         riscv::asm::wfi();
     }
 
+    unsafe fn ei() {
+        riscv::interrupt::enable();
+    }
+
+    fn di() {
+        riscv::interrupt::disable();
+    }
+
     fn micros() -> u64 {
         riscv::register::time::read64() / 10
     }

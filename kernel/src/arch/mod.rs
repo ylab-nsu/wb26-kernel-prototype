@@ -1,9 +1,6 @@
 use static_assertions::assert_impl_all;
 
-use crate::arch::traits::{
-    TargetAddress, TargetAddressSpace, TargetDebugWriter, TargetMapping, TargetPhysicalAllocation,
-    TargetPhysicalAllocator, TargetPlatform,
-};
+use crate::arch::traits::{TargetAddress, TargetAddressSpace, TargetDebugWriter, TargetMapping, TargetPhysicalAllocation, TargetPhysicalAllocator, TargetPlatform, TargetTrapFrame};
 
 pub mod traits;
 
@@ -21,6 +18,8 @@ cfg_if::cfg_if! {
         pub type DebugWriter = riscv::write::SbiWriter;
         pub type AddressSpace = riscv::vm::address_space::Sv39AddressSpace;
         pub type Mapping = riscv::vm::address_space::Sv39Mapping;
+        
+        pub type TrapFrame = riscv::threading::trap::RiscvTrapFrame;
 
         pub use riscv::mmu::set_satp;
     } else {
@@ -36,3 +35,5 @@ assert_impl_all!(Platform: TargetPlatform);
 assert_impl_all!(DebugWriter: TargetDebugWriter);
 assert_impl_all!(AddressSpace: TargetAddressSpace);
 assert_impl_all!(Mapping: TargetMapping);
+
+assert_impl_all!(TrapFrame: TargetTrapFrame);

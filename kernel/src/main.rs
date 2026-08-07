@@ -13,9 +13,11 @@ pub mod boot;
 pub mod sync;
 pub mod thread;
 pub mod vm;
+mod scheduler;
 
 use core::panic::PanicInfo;
 
+use crate::thread::setup_threads;
 use crate::{
     arch::{traits::TargetPlatform, Platform},
     boot::BootContext,
@@ -23,6 +25,11 @@ use crate::{
 
 pub fn kernel_main(_ctx: BootContext) -> ! {
     info!("Starting kernel (kernel_main())");
+
+    setup_threads();
+    unsafe {
+        Platform::ei();
+    }
 
     loop {
         Platform::wfi();

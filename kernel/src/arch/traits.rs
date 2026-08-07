@@ -1,5 +1,7 @@
 use crate::{
-    allocator::AllocatorError, arch::{Mapping, PhysicalAddress, PhysicalAllocation, VirtualAddress}, vm::{MappingFlags, MappingPermissions},
+    allocator::AllocatorError,
+    arch::{Mapping, PhysicalAddress, PhysicalAllocation, VirtualAddress},
+    vm::{MappingFlags, MappingPermissions},
 };
 
 pub trait TargetPlatform {
@@ -8,6 +10,8 @@ pub trait TargetPlatform {
     fn sleep();
     fn shutdown();
     fn wfi();
+    unsafe fn ei();
+    fn di();
     fn micros() -> u64;
     // ...
 
@@ -63,11 +67,25 @@ pub trait TargetAddress:
 
 pub trait TargetPhysicalAllocator {
     fn alloc_contiguous(size: usize) -> Result<PhysicalAllocation, AllocatorError>;
-    fn alloc_contiguous_aligned(size: usize, alignment: usize) -> Result<PhysicalAllocation, AllocatorError>;
-    fn alloc_contiguous_at(addr: PhysicalAddress, size: usize) -> Result<PhysicalAllocation, AllocatorError>;
+    fn alloc_contiguous_aligned(
+        size: usize,
+        alignment: usize,
+    ) -> Result<PhysicalAllocation, AllocatorError>;
+    fn alloc_contiguous_at(
+        addr: PhysicalAddress,
+        size: usize,
+    ) -> Result<PhysicalAllocation, AllocatorError>;
 }
 
 pub trait TargetPhysicalAllocation: core::fmt::Debug + core::fmt::Display {
     fn addr(&self) -> PhysicalAddress;
     fn size(&self) -> usize;
+}
+
+pub trait TargetTrapFrame: Clone {
+    fn with_pc(self, pc: usize) -> Self;
+    fn with_sp(self, sp: usize) -> Self;
+
+    // todo another interface
+    fn set_arg0(&mut self, value: usize);
 }
