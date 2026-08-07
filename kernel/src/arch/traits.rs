@@ -82,10 +82,15 @@ pub trait TargetPhysicalAllocation: core::fmt::Debug + core::fmt::Display {
     fn size(&self) -> usize;
 }
 
-pub trait TargetTrapFrame: Clone {
+pub trait TargetTrapFrame: Default + Clone {
     fn with_pc(self, pc: usize) -> Self;
     fn with_sp(self, sp: usize) -> Self;
 
     // todo another interface
     fn set_arg0(&mut self, value: usize);
+}
+
+pub trait TargetContext: Default + Clone {
+    fn with_ra(self, ra: usize) -> Self;
+    fn with_sp(self, sp: usize) -> Self;
 }

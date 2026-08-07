@@ -1,8 +1,19 @@
 use crate::arch::set_satp;
-use crate::threading::thread::{get_current_thread_id, get_process, get_process_count, set_current_thread_id, Context};
+use crate::arch::traits::TargetContext;
+use crate::threading::thread::{
+    get_current_thread_id, get_process, get_process_count, set_current_thread_id,
+};
 
-extern "C" {
-    fn _switch_thread(curr_context: &mut Context, next_context: &mut Context) -> usize;
+unsafe fn switch_thread(curr_context: &mut impl TargetContext, next_context: &mut impl TargetContext) {
+    extern "C" {
+        fn _switch_thread(curr_context: usize, next_context: usize) -> usize;
+    }
+    unsafe {
+        _switch_thread(
+            curr_context as *mut _ as usize,
+            next_context as *mut _ as usize,
+        )
+    };
 }
 
 #[export_name = "_reschedule_rust"]
@@ -46,5 +57,5 @@ pub fn reschedule() {
         }
     };
 
-    unsafe { _switch_thread(curr.context, next.context) };
+    unsafe { switch_thread(curr.context, next.context) };
 }

@@ -1,5 +1,5 @@
-use crate::arch::traits::TargetTrapFrame;
-use crate::arch::TrapFrame;
+use crate::arch::traits::{TargetContext, TargetTrapFrame};
+use crate::arch::{Context, TrapFrame};
 use alloc::vec::Vec;
 
 #[repr(C)]
@@ -9,37 +9,6 @@ pub struct Page(pub [usize; 512]);
 extern "C" {
     #[link_name = "__s_temp_kernel_stacks"]
     static mut KERNEL_STACKS: [Page; 512];
-}
-
-#[repr(C)]
-#[derive(Debug, Default, Clone)]
-pub struct Context {
-    pub ra: usize,
-    pub sp: usize,
-    pub s0: usize,
-    pub s1: usize,
-    pub s2: usize,
-    pub s3: usize,
-    pub s4: usize,
-    pub s5: usize,
-    pub s6: usize,
-    pub s7: usize,
-    pub s8: usize,
-    pub s9: usize,
-    pub s10: usize,
-    pub s11: usize,
-}
-
-impl Context {
-    fn with_ra(mut self, ra: usize) -> Self {
-        self.ra = ra;
-        self
-    }
-
-    fn with_sp(mut self, sp: usize) -> Self {
-        self.sp = sp;
-        self
-    }
 }
 
 extern "C" {
