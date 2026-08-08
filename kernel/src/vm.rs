@@ -1,3 +1,5 @@
+use core::fmt::{Display, Write};
+
 use bitfield_struct::bitfield;
 
 #[bitfield(u8)]
@@ -36,6 +38,26 @@ impl MappingPermissions {
     }
 }
 
+impl Display for MappingPermissions {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_char('[').unwrap();
+
+        if self.read() {
+            f.write_char('R').unwrap();
+        }
+        if self.write() {
+            f.write_char('W').unwrap();
+        }
+        if self.execute() {
+            f.write_char('X').unwrap();
+        }
+
+        f.write_char(']').unwrap();
+
+        Ok(())
+    }
+}
+
 #[bitfield(u8)]
 pub struct MappingFlags {
     pub user: bool,
@@ -45,4 +67,27 @@ pub struct MappingFlags {
 
     #[bits(4)]
     __: usize,
+}
+
+impl Display for MappingFlags {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_char('[').unwrap();
+        
+        if self.user() {
+            f.write_char('U').unwrap();
+        }
+        if self.global() {
+            f.write_char('G').unwrap();
+        }
+        if self.accessed() {
+            f.write_char('A').unwrap();
+        }
+        if self.dirty() {
+            f.write_char('D').unwrap();
+        }
+
+        f.write_char(']').unwrap();
+
+        Ok(())
+    }
 }
