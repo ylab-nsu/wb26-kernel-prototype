@@ -1,4 +1,5 @@
 use bitmap_allocator::BitAlloc64K;
+use fdt::Fdt;
 
 use crate::{
     allocator::{bitmap::BitmapMemoryAllocator, AllocatorError},
@@ -30,6 +31,13 @@ impl RiscvPhysicalAllocator {
     fn get_global_allocator() -> &'static Mutex<RiscvPhysicalAllocatorInner> {
         unsafe { PHYSICAL_MEMORY_ALLOCATOR.get_unchecked() }
     }
+
+    fn mark_invalid(addr: PhysicalAddress, size: usize) {
+        Self::get_global_allocator()
+            .lock()
+            .alloc_contiguous_at(addr, size)
+            .unwrap();
+    }
 }
 
 impl TargetPhysicalAllocator for RiscvPhysicalAllocator {
@@ -59,5 +67,39 @@ impl TargetPhysicalAllocator for RiscvPhysicalAllocator {
             .alloc_contiguous_at(addr, size)?;
 
         Ok(RiscvPhysicalAllocation { addr, size })
+    }
+}
+
+pub fn init_physical_allocator(fdt: &Fdt) {
+    let memory = fdt
+        .memory()
+        .regions()
+        .next()
+        .expect("Memory regions are not defined");
+
+    let base = PhysicalAddress::try_from(memory.starting_address as usize).unwrap();
+    let size = memory.size.unwrap();
+
+    unsafe {
+        RiscvPhysicalAllocator::init(base, size);
+    };
+    info!("Initialized physical memory allocator at address {base:p} with size 0x{size:x}");
+
+    if fdt.memory_reservations().count() != 0 {
+        panic!("Memory reservasion blocks in DTB are not supported!");
+    }
+
+    if let Some(reserved_regions) = fdt.find_node("/reserved-memory") {
+        for child in reserved_regions.children() {
+            let region = child.reg().unwrap().next().unwrap();
+
+            let addr = PhysicalAddress::try_from(region.starting_address as usize).unwrap();
+            let size = region.size.unwrap();
+
+            RiscvPhysicalAllocator::mark_invalid(addr, size);
+            info!("Reserved memory at {addr:p} with size 0x{size:x}");
+        }
+    } else {
+        info!("No reserved memory regions found");
     }
 }

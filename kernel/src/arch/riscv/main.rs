@@ -1,11 +1,17 @@
 use core::arch::asm;
 
+use fdt::Fdt;
+
 use crate::{
-    arch::{PhysicalAddress, PhysicalAllocator, riscv::memory::{self, layout::KERNEL_LAYOUT}}, kernel_main, thread,
+    arch::riscv::{
+        alloc,
+        memory::{self, layout::KERNEL_LAYOUT},
+    },
+    kernel_main, thread,
 };
 
 #[export_name = "__riscv_main"]
-fn riscv_main(_hart_id: usize, _dtc: usize) -> ! {
+fn riscv_main(_hart_id: usize, dtc: usize) -> ! {
     debug!("Initializing heap...");
     memory::heap::init_heap();
     memory::stack::init_stack();
@@ -14,7 +20,9 @@ fn riscv_main(_hart_id: usize, _dtc: usize) -> ! {
     thread::setup_threads();
     // device_tree::handle_device_tree(_dtc);
 
-    unsafe { PhysicalAllocator::init(PhysicalAddress::from_bits(0x8000_0000), 4096 * 4096) };
+    let device_tree = unsafe { Fdt::from_ptr(dtc as *const u8).expect("Can't parse device tree") };
+
+    alloc::phys::init_physical_allocator(&device_tree);
 
     println!("I am virtual {:x?}!", riscv::register::satp::read());
 
