@@ -3,11 +3,9 @@ use core::arch::asm;
 use fdt::Fdt;
 
 use crate::{
-    arch::riscv::{
-        alloc,
-        memory::{self, layout::KERNEL_LAYOUT},
-    },
-    kernel_main, thread,
+    arch::{AddressSpace, riscv::{
+        alloc, mapping::map_kernel_sections, memory::{self, layout::KERNEL_LAYOUT},
+    }}, kernel_main, thread,
 };
 
 #[export_name = "__riscv_main"]
@@ -30,6 +28,10 @@ fn riscv_main(_hart_id: usize, dtc: usize) -> ! {
 
     unsafe { asm!("csrw sscratch, sp") };
     // thread::enable_threading();
+
+    let mut address_space = AddressSpace::new();
+    
+    let _mappings = map_kernel_sections(&mut address_space);
 
     kernel_main();
 
