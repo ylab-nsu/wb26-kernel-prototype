@@ -308,7 +308,7 @@ impl<P: TargetPageTable> Drop for PageTableRef<P> {
             descriptor.num_refs -= 1;
 
             let left = descriptor.num_refs;
-            debug!("Drop Ref, left: {left}");
+            // debug!("Drop Ref, left: {left}");
 
             descriptor.num_refs == 0
         };

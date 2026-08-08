@@ -78,7 +78,7 @@ impl TargetAddressSpace for Sv39AddressSpace {
             let va = virt_addr.byte_add(offset);
             let pa = phys_addr.byte_add(offset);
 
-            debug!("Map {va:p} {pa:p}");
+            // debug!("Map {va:p} {pa:p}");
             self.map_page(va, pa, permissions, flags);
         }
 
