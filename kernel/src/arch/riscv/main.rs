@@ -4,16 +4,13 @@ use fdt::Fdt;
 
 use crate::{
     arch::{
-        riscv::{
+        AddressSpace, riscv::{
             alloc,
             mapping::map_kernel_sections,
             memory::{self, layout::KERNEL_LAYOUT},
             vm,
-        },
-        traits::TargetAddressSpace,
-        AddressSpace,
-    },
-    kernel_main, thread,
+        }, traits::TargetAddressSpace,
+    }, boot::BootContext, kernel_main, thread,
 };
 
 #[export_name = "__riscv_main"]
@@ -41,13 +38,18 @@ fn riscv_main(_hart_id: usize, dtc: usize) -> ! {
 
     let mut address_space = AddressSpace::new();
 
-    let _mappings = map_kernel_sections(&mut address_space);
+    let mappings = map_kernel_sections(&mut address_space);
 
     unsafe {
         address_space.switch();
     }
 
-    kernel_main();
+    let boot_context = BootContext {
+        address_space,
+        mappings,
+    };
+
+    kernel_main(boot_context);
 
     // loop {
     //     riscv::asm::wfi();
