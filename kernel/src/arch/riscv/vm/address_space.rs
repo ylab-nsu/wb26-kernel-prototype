@@ -1,5 +1,7 @@
 use core::ptr::NonNull;
 
+use riscv::{asm::sfence_vma_all, register::satp};
+
 use crate::{
     arch::{
         common::page_table::pool::{PageTablePool, PageTableRef},
@@ -92,7 +94,12 @@ impl TargetAddressSpace for Sv39AddressSpace {
     }
 
     unsafe fn switch(&self) {
-        todo!()
+        let pa = self.root_page_table.get_phys_addr();
+        let ppn = pa.into_bits() >> 12;
+        debug!("Switch to new address space with PPN 0x{ppn:x}");
+
+        satp::set(satp::Mode::Sv39, 0, ppn as usize);
+        sfence_vma_all();
     }
 }
 
