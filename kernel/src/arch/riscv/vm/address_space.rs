@@ -5,7 +5,10 @@ use riscv::{asm::sfence_vma_all, register::satp};
 use crate::{
     arch::{
         common::page_table::pool::{PageTablePool, PageTableRef},
-        riscv::vm::{page_table::Sv39PageTable, PAGE_SIZE},
+        riscv::{
+            memory::layout::KERNEL_LAYOUT,
+            vm::{page_table::Sv39PageTable, PAGE_SIZE},
+        },
         traits::{TargetAddress, TargetAddressSpace, TargetMapping, TargetPhysicalAllocation},
         Mapping, PhysicalAddress, PhysicalAllocation, VirtualAddress,
     },
@@ -13,8 +16,14 @@ use crate::{
 };
 
 #[link_section = ".page_table_pool"]
-pub static PAGE_TABLE_POOL: PageTablePool<Sv39PageTable> =
-    unsafe { PageTablePool::new(0x8311b000) };
+pub static PAGE_TABLE_POOL: PageTablePool<Sv39PageTable> = unsafe { PageTablePool::new() };
+
+pub fn init_page_table_pool() {
+    let page_table_pool_phys_addr =
+        PhysicalAddress::try_from(KERNEL_LAYOUT.spage_table_pool - KERNEL_LAYOUT.kernel_va_offset)
+            .unwrap();
+    unsafe { PAGE_TABLE_POOL.set_pool_phys_address(page_table_pool_phys_addr) };
+}
 
 pub struct Sv39AddressSpace {
     root_page_table: PageTableRef<Sv39PageTable>,

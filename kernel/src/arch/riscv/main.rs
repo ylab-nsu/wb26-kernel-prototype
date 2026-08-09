@@ -3,9 +3,17 @@ use core::arch::asm;
 use fdt::Fdt;
 
 use crate::{
-    arch::{AddressSpace, riscv::{
-        alloc, mapping::map_kernel_sections, memory::{self, layout::KERNEL_LAYOUT},
-    }}, kernel_main, thread,
+    arch::{
+        riscv::{
+            alloc,
+            mapping::map_kernel_sections,
+            memory::{self, layout::KERNEL_LAYOUT},
+            vm,
+        },
+        traits::TargetAddressSpace,
+        AddressSpace,
+    },
+    kernel_main, thread,
 };
 
 #[export_name = "__riscv_main"]
@@ -22,6 +30,8 @@ fn riscv_main(_hart_id: usize, dtc: usize) -> ! {
 
     alloc::phys::init_physical_allocator(&device_tree);
 
+    vm::address_space::init_page_table_pool();
+
     println!("I am virtual {:x?}!", riscv::register::satp::read());
 
     debug!("{KERNEL_LAYOUT:#x?}");
@@ -30,8 +40,12 @@ fn riscv_main(_hart_id: usize, dtc: usize) -> ! {
     // thread::enable_threading();
 
     let mut address_space = AddressSpace::new();
-    
+
     let _mappings = map_kernel_sections(&mut address_space);
+
+    unsafe {
+        address_space.switch();
+    }
 
     kernel_main();
 

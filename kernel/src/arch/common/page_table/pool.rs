@@ -10,22 +10,13 @@ use sync_unsafe_cell::SyncUnsafeCell;
 
 use crate::{
     arch::{
-        common::page_table::{
-            alloc::PAGE_TABLE_ALLOCATOR, PageTableEntryState, PageTableEntryStateInner,
-            TargetPageTable, TargetPageTableEntry,
-        },
-        traits::TargetAddress,
-        PhysicalAddress,
-    },
-    sync::Mutex,
-    vm::{MappingFlags, MappingPermissions},
+        PhysicalAddress, common::page_table::{
+            PageTableEntryState, PageTableEntryStateInner, TargetPageTable, TargetPageTableEntry, alloc::PAGE_TABLE_ALLOCATOR,
+        }, traits::TargetAddress,
+    }, sync::{Mutex, Once}, vm::{MappingFlags, MappingPermissions},
 };
 
 pub const PAGE_TABLE_POOL_ENTRIES: usize = 4;
-
-// ELIMIATE WITH HOLY FIRE
-// const PAGE_TABLE_PHYS_ADDR: usize = 0x8311b000;
-const PAGE_TABLE_PHYS_ADDR: PhysicalAddress = PhysicalAddress::from_bits(0x83123000);
 
 #[derive(Debug)]
 pub struct PageTableDescriptor {
@@ -36,7 +27,7 @@ pub struct PageTableDescriptor {
 pub struct PageTablePool<P: TargetPageTable> {
     page_tables: [MaybeUninit<SyncUnsafeCell<P>>; PAGE_TABLE_POOL_ENTRIES],
     descriptors: [MaybeUninit<Mutex<PageTableDescriptor>>; PAGE_TABLE_POOL_ENTRIES],
-    page_tables_phys_addr: usize,
+    page_tables_phys_addr: Once<PhysicalAddress>,
 }
 
 impl<P: TargetPageTable> Debug for PageTablePool<P> {
@@ -55,12 +46,16 @@ impl<P: TargetPageTable> Debug for PageTablePool<P> {
 }
 
 impl<P: TargetPageTable> PageTablePool<P> {
-    pub const unsafe fn new(page_tables_phys_addr: usize) -> Self {
+    pub const unsafe fn new() -> Self {
         PageTablePool {
             page_tables: [const { MaybeUninit::uninit() }; PAGE_TABLE_POOL_ENTRIES],
             descriptors: [const { MaybeUninit::uninit() }; PAGE_TABLE_POOL_ENTRIES],
-            page_tables_phys_addr,
+            page_tables_phys_addr: Once::new(),
         }
+    }
+
+    pub unsafe fn set_pool_phys_address(&self, addr: PhysicalAddress) {
+        self.page_tables_phys_addr.call_once(|| addr);
     }
 
     unsafe fn get_page_table_ptr(&self, index: usize) -> *mut P {
@@ -82,11 +77,13 @@ impl<P: TargetPageTable> PageTablePool<P> {
     }
 
     unsafe fn get_page_table_addr_from_index(&self, index: usize) -> PhysicalAddress {
-        PAGE_TABLE_PHYS_ADDR.byte_add(index * core::mem::size_of::<P>())
+        let page_tables_phys_addr = unsafe { self.page_tables_phys_addr.get_unchecked() };
+        page_tables_phys_addr.byte_add(index * core::mem::size_of::<P>())
     }
 
     unsafe fn get_index_from_page_table_addr(&self, phys_addr: PhysicalAddress) -> usize {
-        phys_addr.byte_offset_from_unsigned(PAGE_TABLE_PHYS_ADDR) / core::mem::size_of::<P>()
+        let page_tables_phys_addr = unsafe { self.page_tables_phys_addr.get_unchecked() };
+        phys_addr.byte_offset_from_unsigned(*page_tables_phys_addr) / core::mem::size_of::<P>()
     }
 
     unsafe fn create_ref_from_index(&self, index: usize) -> PageTableRef<P> {
@@ -112,7 +109,7 @@ impl<P: TargetPageTable> PageTablePool<P> {
 
 impl<P: TargetPageTable> PageTablePool<P> {
     pub fn alloc_page_table(&self) -> PageTableRef<P> {
-        let table_idx = PAGE_TABLE_ALLOCATOR.alloc().unwrap();
+        let table_idx = PAGE_TABLE_ALLOCATOR.alloc().expect("Can't allocate new page table");
 
         debug!("Allocated new page table at {table_idx}");
 

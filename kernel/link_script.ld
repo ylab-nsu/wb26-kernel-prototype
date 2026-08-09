@@ -311,7 +311,7 @@ SECTIONS
   } > KERNEL_REGION
 
   /* fictitious region that represents the memory available for page table pool */
-  .page_table_pool ALIGN(PAGE_SIZE) (NOLOAD) : AT(ADDR(.page_table_pool) - KERNEL_VA_OFFSET)
+  .page_table_pool ALIGN(PAGE_SIZE) : AT(ADDR(.page_table_pool) - KERNEL_VA_OFFSET)
   {
     __spage_table_pool = .;
     KEEP(*(.page_table_pool));
