@@ -49,6 +49,9 @@ fn riscv_main(_hart_id: usize, dtc: usize) -> ! {
         mappings,
     };
 
+    let time = riscv::register::time::read64();
+    sbi::timer::set_timer(time + 1_000_000).expect("Can't set timer");
+
     kernel_main(boot_context);
 
     // loop {
