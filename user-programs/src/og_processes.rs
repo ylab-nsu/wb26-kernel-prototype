@@ -1,7 +1,7 @@
 use crate::syscalls::print_number;
 
-#[export_name = "process1"]
-pub extern "C" fn process1() {
+#[export_name = "og_process1"]
+pub extern "C" fn og_process1() {
     loop {
         // println!("Process1 1");
         print_number(1001);
@@ -25,8 +25,8 @@ pub extern "C" fn process1() {
     }
 }
 
-#[export_name = "process2"]
-pub extern "C" fn process2() {
+#[export_name = "og_process2"]
+pub extern "C" fn og_process2() {
     loop {
         // println!("Process2 1");
         print_number(2001);
@@ -54,8 +54,8 @@ pub extern "C" fn process2() {
     }
 }
 
-#[export_name = "process3"]
-pub extern "C" fn process3() {
+#[export_name = "og_process3"]
+pub extern "C" fn og_process3() {
     loop {
         // println!("Process3 1");
         print_number(3001);

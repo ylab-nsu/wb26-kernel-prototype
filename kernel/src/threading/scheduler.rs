@@ -2,7 +2,7 @@ use crate::arch::set_satp;
 use crate::arch::traits::TargetContext;
 use crate::drivers::TEST_DRIVER_ANY;
 use crate::threading::thread::{
-    get_current_thread_id, get_process, get_process_count, set_current_thread_id, PROCESSES_INDEXES,
+    get_current_thread_id, get_thread, get_threads_count, set_current_thread_id, THREADS_INDEXES,
 };
 
 unsafe fn switch_thread(
@@ -20,7 +20,7 @@ unsafe fn switch_thread(
     };
 }
 
-static mut LAST_USER: usize = unsafe { PROCESSES_INDEXES.user_start - 1 };
+static mut LAST_USER: usize = unsafe { THREADS_INDEXES.user_start - 1 };
 
 #[export_name = "_reschedule_rust"]
 pub fn reschedule() {
@@ -30,16 +30,16 @@ pub fn reschedule() {
 
     let next_thread = unsafe {
         if TEST_DRIVER_ANY {
-            PROCESSES_INDEXES.driver_task
+            THREADS_INDEXES.driver_task
         } else {
             let mut checked = LAST_USER;
             let next_thread = loop {
-                checked = if checked < get_process_count() - 1 {
+                checked = if checked < get_threads_count() - 1 {
                     checked + 1
                 } else {
-                    PROCESSES_INDEXES.user_start
+                    THREADS_INDEXES.user_start
                 };
-                if get_process(checked).valid {
+                if get_thread(checked).valid {
                     break checked;
                 }
             };
@@ -49,8 +49,8 @@ pub fn reschedule() {
     };
 
     let (curr, next) = unsafe {
-        let curr = get_process(get_current_thread_id());
-        let next = get_process(next_thread);
+        let curr = get_thread(get_current_thread_id());
+        let next = get_thread(next_thread);
 
         // println!("CURRENT_THREAD: {CURRENT_THREAD}");
 

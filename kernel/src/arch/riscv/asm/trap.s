@@ -98,7 +98,7 @@ _start_trap:
     jal  ra, _reschedule_rust
 1:
 
-# Initialize context.ra for a new process to this
+# Initialize context.ra for a new thread to this
 .global _initial_return_trap
 _initial_return_trap:
 

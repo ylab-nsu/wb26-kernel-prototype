@@ -50,16 +50,16 @@ impl Thread {
     }
 }
 
-pub struct ProcessesIndexes {
+pub struct ThreadsIndexes {
     pub driver_task: usize,
     pub user_start: usize,
 }
 
-static mut PROCESSES: Vec<Thread> = Vec::new();
+static mut THREADS: Vec<Thread> = Vec::new();
 
 static mut CURRENT_THREAD: usize = 0;
 
-pub static mut PROCESSES_INDEXES: ProcessesIndexes = ProcessesIndexes {
+pub static mut THREADS_INDEXES: ThreadsIndexes = ThreadsIndexes {
     // These will be initialized later, but before scheduling started
     driver_task: 1,
     user_start: 1,
@@ -73,47 +73,47 @@ pub unsafe fn set_current_thread_id(id: usize) {
     unsafe { CURRENT_THREAD = id }
 }
 
-pub unsafe fn get_process_count() -> usize {
-    unsafe { PROCESSES.len() }
+pub unsafe fn get_threads_count() -> usize {
+    unsafe { THREADS.len() }
 }
 
-pub unsafe fn get_process(id: usize) -> &'static mut Thread {
-    unsafe { PROCESSES.get_mut(id).unwrap() }
+pub unsafe fn get_thread(id: usize) -> &'static mut Thread {
+    unsafe { THREADS.get_mut(id).unwrap() }
 }
 
-pub fn create_empty_process() -> usize {
+pub fn create_empty_thread() -> usize {
     unsafe {
-        let id = PROCESSES.len();
+        let id = THREADS.len();
         let mut pr0 = Thread::new(id);
         pr0.valid = false;
-        PROCESSES.push(pr0);
+        THREADS.push(pr0);
         id
     }
 }
 
 pub fn spawn_user(f: extern "C" fn() -> !, user_sp: usize) -> usize {
     unsafe {
-        let id = PROCESSES.len();
+        let id = THREADS.len();
         let thread = Thread::new(id);
         *thread.user_frame = TrapFrame::default().with_pc(f as usize).with_sp(user_sp);
         *thread.context = Context::default()
             .with_ra(_initial_return_trap as *const () as usize)
             .with_sp((thread.user_frame as *mut TrapFrame) as usize);
-        PROCESSES.push(thread);
+        THREADS.push(thread);
         id
     }
 }
 
 pub fn spawn_kernel(f: extern "C" fn() -> !) -> usize {
     unsafe {
-        let id = PROCESSES.len();
+        let id = THREADS.len();
         let mut thread = Thread::new(id);
         *thread.user_frame = TrapFrame::default().with_pc(f as usize).with_sp(0);
         *thread.context = Context::default()
             .with_ra(_initial_return_trap as *const () as usize)
             .with_sp(thread.user_frame as *mut TrapFrame as usize);
         thread.is_kernel = true;
-        PROCESSES.push(thread);
+        THREADS.push(thread);
         id
     }
 }

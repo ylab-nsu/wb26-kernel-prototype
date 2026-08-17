@@ -1,7 +1,7 @@
 use crate::arch::traits::TargetTrapFrame;
 use crate::drivers::driver_task;
 use crate::threading::thread::{
-    create_empty_process, get_process, spawn_kernel, spawn_user, PROCESSES_INDEXES,
+    create_empty_thread, get_thread, spawn_kernel, spawn_user, THREADS_INDEXES,
 };
 use core::arch::global_asm;
 
@@ -18,18 +18,18 @@ global_asm!(
     ".align 2",
     "crt0:     .dc.a __user_crt0",
     "user1:    .dc.a __user_user1",
-    "process1: .dc.a __user_process1",
-    "process2: .dc.a __user_process2",
-    "process3: .dc.a __user_process3",
+    "og_process1: .dc.a __user_og_process1",
+    "og_process2: .dc.a __user_og_process2",
+    "og_process3: .dc.a __user_og_process3",
     "scull_user: .dc.a __user_scull_user",
 );
 
 extern "C" {
     static crt0: extern "C" fn() -> !;
     static user1: extern "C" fn();
-    static process1: extern "C" fn();
-    static process2: extern "C" fn();
-    static process3: extern "C" fn();
+    static og_process1: extern "C" fn();
+    static og_process2: extern "C" fn();
+    static og_process3: extern "C" fn();
     static scull_user: extern "C" fn();
 }
 
@@ -45,7 +45,7 @@ pub fn spawn_user_program(prog: &UserProgram) {
     // spawn(USER_PROGRAMS[0].entry, stack_end);
     let id = spawn_user(unsafe { crt0 }, stack_end);
     unsafe {
-        get_process(id).user_frame.set_arg0(prog.entry as usize);
+        get_thread(id).user_frame.set_arg0(prog.entry as usize);
     }
 }
 
@@ -54,12 +54,12 @@ pub fn setup_threads() {
     println!("Current time: {}", time);
     // sbi::timer::set_timer(time + 10_000_000).expect("Can't set timer");
 
-    create_empty_process();
+    create_empty_thread();
 
     let driver_task_id = spawn_kernel(driver_task);
     unsafe {
-        PROCESSES_INDEXES.driver_task = driver_task_id;
-        PROCESSES_INDEXES.user_start = driver_task_id + 1;
+        THREADS_INDEXES.driver_task = driver_task_id;
+        THREADS_INDEXES.user_start = driver_task_id + 1;
     }
 
     let user_programs: [UserProgram; _] = [
@@ -68,15 +68,15 @@ pub fn setup_threads() {
             stack_size: 64 * 1024,
         },
         UserProgram {
-            entry: unsafe { process1 },
+            entry: unsafe { og_process1 },
             stack_size: 64 * 1024,
         },
         UserProgram {
-            entry: unsafe { process2 },
+            entry: unsafe { og_process2 },
             stack_size: 64 * 1024,
         },
         UserProgram {
-            entry: unsafe { process3 },
+            entry: unsafe { og_process3 },
             stack_size: 64 * 1024,
         },
         UserProgram {
