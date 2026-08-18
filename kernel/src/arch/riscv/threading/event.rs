@@ -19,8 +19,8 @@ impl Timers {
         }
     }
 
-    fn set_timer_if_different(&mut self, target_time: Option<TickInstant>) {
-        if self.current_target_time != target_time {
+    fn set_timer_if_sooner(&mut self, target_time: Option<TickInstant>) {
+        if self.current_target_time > target_time {
             self.current_target_time = target_time;
             if let Some(next_time) = target_time {
                 sbi::timer::set_timer(next_time.get_ticks()).expect("Can't set timer");
@@ -30,8 +30,8 @@ impl Timers {
         }
     }
 
-    fn set_timer_from_queue_if_possible_if_different(&mut self) {
-        self.set_timer_if_different(self.get_next_fire_time_from_queue());
+    fn set_timer_from_queue_if_possible_if_sooner(&mut self) {
+        self.set_timer_if_sooner(self.get_next_fire_time_from_queue());
     }
 
     fn get_next_fire_time_from_queue(&self) -> Option<TickInstant> {
@@ -105,7 +105,7 @@ impl TargetTimerQueue for TimerQueue {
                     TimerType::OneShot
                 },
             });
-            timers.set_timer_from_queue_if_possible_if_different();
+            timers.set_timer_if_sooner(Some(target_time));
         });
     }
 
@@ -130,7 +130,7 @@ impl TargetTimerQueue for TimerQueue {
                     break;
                 }
             }
-            timers.set_timer_from_queue_if_possible_if_different();
+            timers.set_timer_from_queue_if_possible_if_sooner();
         });
         for callback in callbacks_to_fire {
             (callback)(time);
