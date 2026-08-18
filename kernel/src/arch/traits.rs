@@ -126,4 +126,5 @@ pub trait TargetTimerQueue {
         Self::fire_timers_ready_by_time(Self::TargetInstant::now());
     }
     fn get_next_fire_time() -> Option<Self::TargetInstant>;
+    fn get_next_fire_time_no_critical() -> Option<Self::TargetInstant>;
 }

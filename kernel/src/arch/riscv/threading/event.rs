@@ -3,6 +3,7 @@ use crate::arch::traits::TargetTimerQueue;
 use crate::sync::Mutex;
 use alloc::collections::{binary_heap::PeekMut, BinaryHeap};
 use core::cmp::{Eq, Ord, PartialEq, PartialOrd};
+use riscv::_export::critical_section;
 
 static TIMERS: Mutex<BinaryHeap<Timer>> = Mutex::new(BinaryHeap::new());
 
@@ -57,40 +58,57 @@ impl TargetTimerQueue for TimerQueue {
         callback: Self::TargetTimerCallback,
         repeat: bool,
     ) {
-        TIMERS.lock().push(Timer {
-            target_time: start_time + interval,
-            start_time: start_time,
-            callback,
-            inner: if repeat {
-                TimerType::Repeating
-            } else {
-                TimerType::OneShot
-            },
+        let target_time = start_time + interval;
+        critical_section::with(|_| {
+            TIMERS.lock().push(Timer {
+                target_time: target_time,
+                start_time: start_time,
+                callback,
+                inner: if repeat {
+                    TimerType::Repeating
+                } else {
+                    TimerType::OneShot
+                },
+            });
         });
+        sbi::timer::set_timer(target_time.get_ticks()).expect("Can't set timer");
     }
 
     fn fire_timers_ready_by_time(time: Self::TargetInstant) {
-        let mut timers = TIMERS.lock();
-        while let Some(mut event) = timers.peek_mut() {
-            if event.target_time <= time {
-                (event.callback)(time);
-                match event.inner {
-                    TimerType::Repeating => {
-                        let interval = event.target_time - event.start_time;
-                        event.start_time = time;
-                        event.target_time = time + interval;
+        critical_section::with(|_| {
+            let mut timers = TIMERS.lock();
+            while let Some(mut event) = timers.peek_mut() {
+                if event.target_time <= time {
+                    (event.callback)(time);
+                    match event.inner {
+                        TimerType::Repeating => {
+                            let interval = event.target_time - event.start_time;
+                            event.start_time = time;
+                            event.target_time = time + interval;
+                        }
+                        TimerType::OneShot => {
+                            PeekMut::pop(event);
+                        }
                     }
-                    TimerType::OneShot => {
-                        PeekMut::pop(event);
-                    }
+                } else {
+                    break;
                 }
-            } else {
-                break;
             }
-        }
+            if let Some(next_time) = Self::get_next_fire_time_no_critical() {
+                sbi::timer::set_timer(next_time.get_ticks()).expect("Can't set timer");
+            } else {
+                sbi::timer::set_timer(u64::MAX).expect("Can't set timer");
+            }
+        })
     }
 
     fn get_next_fire_time() -> Option<Self::TargetInstant> {
+        critical_section::with(|_| {
+            Self::get_next_fire_time_no_critical()
+        })
+    }
+    
+    fn get_next_fire_time_no_critical() -> Option<Self::TargetInstant> {
         TIMERS.lock().peek().map(|e| e.target_time)
     }
 }
