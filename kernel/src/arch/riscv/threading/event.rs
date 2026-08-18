@@ -10,7 +10,7 @@ enum TimerType {
     Repeating,
 }
 
-type TimerCallback = fn(&TickInstant);
+type TimerCallback = fn(TickInstant);
 
 // Fire time is passed into the callback
 struct Timer {
@@ -73,7 +73,7 @@ pub fn drain_events_by_time(time: TickInstant) {
     let mut timers = TIMERS.lock();
     while let Some(mut event) = timers.peek_mut() {
         if event.target_time <= time {
-            (event.callback)(&time);
+            (event.callback)(time);
             match event.inner {
                 TimerType::Repeating => {
                     let interval = event.target_time - event.start_time;
