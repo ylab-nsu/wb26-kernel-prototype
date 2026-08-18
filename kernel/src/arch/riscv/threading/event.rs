@@ -2,6 +2,7 @@ use crate::arch::riscv::time::{TickDuration, TickInstant};
 use crate::arch::traits::TargetTimerQueue;
 use crate::sync::Mutex;
 use alloc::collections::{binary_heap::PeekMut, BinaryHeap};
+use alloc::vec::Vec;
 use core::cmp::{Eq, Ord, PartialEq, PartialOrd};
 use riscv::_export::critical_section;
 
@@ -87,12 +88,13 @@ impl TargetTimerQueue for TimerQueue {
     }
 
     fn fire_timers_ready_by_time(time: Self::TargetInstant) {
+        let mut callbacks_to_fire: Vec<TimerCallback> = Vec::new();
         critical_section::with(|_| {
             {
                 let mut timers = TIMERS.lock();
                 while let Some(mut event) = timers.peek_mut() {
                     if event.target_time <= time {
-                        (event.callback)(time);
+                        callbacks_to_fire.push(event.callback);
                         match event.inner {
                             TimerType::Repeating => {
                                 let interval = event.target_time - event.start_time;
@@ -109,7 +111,10 @@ impl TargetTimerQueue for TimerQueue {
                 }
             }
             Self::set_timer_if_possible_no_critical();
-        })
+        });
+        for callback in callbacks_to_fire {
+            (callback)(time);
+        }
     }
 
     fn get_next_fire_time() -> Option<Self::TargetInstant> {
