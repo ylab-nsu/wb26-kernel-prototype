@@ -1,7 +1,5 @@
-use crate::arch::riscv::threading::event::{
-    drain_events_by_time, peek_next_interrupt_time, TickInstant,
-};
-use crate::arch::traits::TargetTrapFrame;
+use crate::arch::riscv::threading::event::TimerQueue;
+use crate::arch::traits::{TargetTimerQueue, TargetTrapFrame};
 use crate::syscall::handle_syscall;
 use riscv::interrupt::{Exception, Interrupt, Trap};
 use riscv::register::mtvec::TrapMode;
@@ -106,8 +104,8 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             need_reschedule = true;
             println!("Timer interrupt");
-            drain_events_by_time(TickInstant::now());
-            if let Some(next_time) = peek_next_interrupt_time() {
+            TimerQueue::fire_ready_timers();
+            if let Some(next_time) = TimerQueue::get_next_fire_time() {
                 sbi::timer::set_timer(next_time.get_ticks()).expect("Can't set timer");
             } else {
                 sbi::timer::set_timer(u64::MAX).expect("Can't set timer");

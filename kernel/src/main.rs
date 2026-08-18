@@ -18,24 +18,23 @@ pub mod vm;
 
 use core::panic::PanicInfo;
 
-use crate::arch::add_timer;
-use crate::arch::{traits::TargetPlatform, Platform};
+use crate::arch::{traits::TargetPlatform, traits::TargetTimerQueue, Platform, TimerQueue};
 use crate::boot::BootContext;
 use crate::threading::init::setup_threads;
 use core::time::Duration;
 
 fn setup_timers() {
-    add_timer(
+    TimerQueue::add_timer(
         Duration::from_secs(1).into(),
         |_| println!("----------------- Second timer"),
         true,
     );
-    add_timer(
+    TimerQueue::add_timer(
         Duration::from_secs(5).into(),
         |_| println!("5 TIMER ---------------------"),
         true,
     );
-    add_timer(
+    TimerQueue::add_timer(
         Duration::from_secs(10).into(),
         |_| println!("-------------------------- 10 Second timer"),
         false,

@@ -1,4 +1,5 @@
-pub use crate::arch::riscv::time::{TickDuration, TickInstant};
+use crate::arch::riscv::time::{TickDuration, TickInstant};
+use crate::arch::traits::TargetTimerQueue;
 use crate::sync::Mutex;
 use alloc::collections::{binary_heap::PeekMut, BinaryHeap};
 use core::cmp::{Eq, Ord, PartialEq, PartialOrd};
@@ -43,49 +44,53 @@ impl PartialEq for Timer {
 
 impl Eq for Timer {}
 
-pub fn add_timer_at(
-    start_time: TickInstant,
-    interval: TickDuration,
-    callback: TimerCallback,
-    repeat: bool,
-) {
-    TIMERS.lock().push(Timer {
-        target_time: start_time + interval,
-        start_time: start_time,
-        callback,
-        inner: if repeat {
-            TimerType::Repeating
-        } else {
-            TimerType::OneShot
-        },
-    });
-}
+pub struct TimerQueue;
 
-pub fn add_timer(interval: TickDuration, callback: TimerCallback, repeat: bool) {
-    add_timer_at(TickInstant::now(), interval, callback, repeat);
-}
+impl TargetTimerQueue for TimerQueue {
+    type TargetDuration = TickDuration;
+    type TargetInstant = TickInstant;
+    type TargetTimerCallback = TimerCallback;
 
-pub fn peek_next_interrupt_time() -> Option<TickInstant> {
-    TIMERS.lock().peek().map(|e| e.target_time)
-}
+    fn add_timer_at(
+        start_time: Self::TargetInstant,
+        interval: Self::TargetDuration,
+        callback: Self::TargetTimerCallback,
+        repeat: bool,
+    ) {
+        TIMERS.lock().push(Timer {
+            target_time: start_time + interval,
+            start_time: start_time,
+            callback,
+            inner: if repeat {
+                TimerType::Repeating
+            } else {
+                TimerType::OneShot
+            },
+        });
+    }
 
-pub fn drain_events_by_time(time: TickInstant) {
-    let mut timers = TIMERS.lock();
-    while let Some(mut event) = timers.peek_mut() {
-        if event.target_time <= time {
-            (event.callback)(time);
-            match event.inner {
-                TimerType::Repeating => {
-                    let interval = event.target_time - event.start_time;
-                    event.start_time = time;
-                    event.target_time = time + interval;
+    fn fire_timers_ready_by_time(time: Self::TargetInstant) {
+        let mut timers = TIMERS.lock();
+        while let Some(mut event) = timers.peek_mut() {
+            if event.target_time <= time {
+                (event.callback)(time);
+                match event.inner {
+                    TimerType::Repeating => {
+                        let interval = event.target_time - event.start_time;
+                        event.start_time = time;
+                        event.target_time = time + interval;
+                    }
+                    TimerType::OneShot => {
+                        PeekMut::pop(event);
+                    }
                 }
-                TimerType::OneShot => {
-                    PeekMut::pop(event);
-                }
+            } else {
+                break;
             }
-        } else {
-            break;
         }
+    }
+
+    fn get_next_fire_time() -> Option<Self::TargetInstant> {
+        TIMERS.lock().peek().map(|e| e.target_time)
     }
 }

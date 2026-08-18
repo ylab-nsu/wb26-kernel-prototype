@@ -97,3 +97,33 @@ pub trait TargetContext: Default + Clone {
     fn with_ra(self, ra: usize) -> Self;
     fn with_sp(self, sp: usize) -> Self;
 }
+
+pub trait TargetInstant {
+    fn now() -> Self;
+}
+
+pub trait TargetTimerQueue {
+    type TargetDuration;
+    type TargetInstant: TargetInstant;
+    type TargetTimerCallback: FnMut(Self::TargetInstant);
+
+    fn add_timer_at(
+        start_time: Self::TargetInstant,
+        interval: Self::TargetDuration,
+        callback: Self::TargetTimerCallback,
+        repeat: bool,
+    );
+
+    fn add_timer(
+        interval: Self::TargetDuration,
+        callback: Self::TargetTimerCallback,
+        repeat: bool,
+    ) {
+        Self::add_timer_at(Self::TargetInstant::now(), interval, callback, repeat);
+    }
+    fn fire_timers_ready_by_time(time: Self::TargetInstant);
+    fn fire_ready_timers() {
+        Self::fire_timers_ready_by_time(Self::TargetInstant::now());
+    }
+    fn get_next_fire_time() -> Option<Self::TargetInstant>;
+}

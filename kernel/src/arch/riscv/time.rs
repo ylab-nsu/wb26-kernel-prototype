@@ -1,3 +1,4 @@
+use crate::arch::traits::TargetInstant;
 use core::{
     ops::{Add, Sub},
     time::Duration,
@@ -37,19 +38,17 @@ pub struct TickInstant {
     time_ticks: Tick,
 }
 
-impl TickInstant {
-    pub fn get_ticks(&self) -> Tick {
-        self.time_ticks
-    }
-
-    pub fn elapsed(&self) -> TickDuration {
-        TickDuration::new(self.time_ticks - riscv::register::time::read64())
-    }
-
-    pub fn now() -> Self {
+impl TargetInstant for TickInstant {
+    fn now() -> Self {
         Self {
             time_ticks: riscv::register::time::read64(),
         }
+    }
+}
+
+impl TickInstant {
+    pub fn get_ticks(&self) -> Tick {
+        self.time_ticks
     }
 }
 

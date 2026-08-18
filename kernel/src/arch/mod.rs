@@ -1,8 +1,10 @@
 use static_assertions::assert_impl_all;
 
-use crate::arch::traits::{TargetAddress, TargetAddressSpace, TargetContext, TargetDebugWriter, TargetMapping, TargetPhysicalAllocation, TargetPhysicalAllocator, TargetPlatform, TargetTrapFrame};
-
-pub use crate::arch::riscv::threading::event::{TickInstant, add_timer};
+use crate::arch::traits::{
+    TargetAddress, TargetAddressSpace, TargetContext, TargetDebugWriter, TargetMapping,
+    TargetPhysicalAllocation, TargetPhysicalAllocator, TargetPlatform, TargetTimerQueue,
+    TargetTrapFrame,
+};
 
 pub mod traits;
 
@@ -20,9 +22,11 @@ cfg_if::cfg_if! {
         pub type DebugWriter = riscv::write::SbiWriter;
         pub type AddressSpace = riscv::vm::address_space::Sv39AddressSpace;
         pub type Mapping = riscv::vm::address_space::Sv39Mapping;
-        
+
         pub type TrapFrame = riscv::threading::trap::RiscvTrapFrame;
         pub type Context = riscv::threading::switch::RiscvContext;
+
+        pub type TimerQueue = riscv::threading::event::TimerQueue;
 
         pub use riscv::mmu::set_satp;
     } else {
@@ -41,3 +45,5 @@ assert_impl_all!(Mapping: TargetMapping);
 
 assert_impl_all!(TrapFrame: TargetTrapFrame);
 assert_impl_all!(Context: TargetContext);
+
+assert_impl_all!(TimerQueue: TargetTimerQueue);
