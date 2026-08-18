@@ -31,6 +31,6 @@ pub fn handle_syscall(syscall_number: usize, arg1: usize, arg2: usize, arg3: usi
             TEST_DRIVER_QUEUE.as_view(),
         ),
         5 => reschedule(),
-        _ => println!("Unexpected syscall number: {}", syscall_number),
+        _ => warn!("Unexpected syscall number: {}", syscall_number),
     }
 }

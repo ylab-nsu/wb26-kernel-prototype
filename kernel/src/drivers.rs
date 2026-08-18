@@ -43,7 +43,7 @@ pub fn put_into_queue(message: TestDriverMessage, queue: &mpmc::QueueView<TestDr
             Ok(_) => break,
             Err(v) => {
                 message = v;
-                println!("Cannot put element into queue, reschedule");
+                info!("Cannot put element into queue, park current thread and reschedule");
                 reschedule();
             }
         }
@@ -56,26 +56,28 @@ pub extern "C" fn driver_task() -> ! {
         let message = critical_section::with(|_| TEST_DRIVER_QUEUE.dequeue());
         match message {
             None => {
-                println!("Driver task yields");
+                info!("Driver task yields");
                 unsafe {
                     TEST_DRIVER_ANY = false;
                 }
                 reschedule();
-                println!("Driver back to work");
+                info!("Driver back to work");
             }
-            Some(TestDriverMessage::PrintNumber { number }) => println!("PrintNumber: {number}"),
+            Some(TestDriverMessage::PrintNumber { number }) => info!("PrintNumber: {}", number),
             Some(TestDriverMessage::PrintString { user_addr, len }) => unsafe {
                 let ptr = user_addr.wrapping_sub(Platform::get_user_va_offset()) as *const u8;
                 let s = core::slice::from_raw_parts(ptr, len);
-                println!("PrintString:");
+                info!("PrintString");
+                print!("`");
                 print!("{}", core::str::from_utf8_unchecked(s));
+                println!("`");
             },
             Some(TestDriverMessage::WriteScull {
                 user_src,
                 scull_dst,
                 count: len,
             }) => unsafe {
-                println!("WriteScull something");
+                info!("WriteScull something");
                 assert!(scull_dst + len <= SCULL_AREA.len());
                 let src = user_src.wrapping_sub(Platform::get_user_va_offset()) as *const u8;
                 let dst = SCULL_AREA.as_mut_ptr().add(scull_dst);
@@ -86,7 +88,7 @@ pub extern "C" fn driver_task() -> ! {
                 scull_src,
                 count: len,
             }) => unsafe {
-                println!("ReadScull something");
+                info!("ReadScull something");
                 assert!(scull_src + len <= SCULL_AREA.len());
                 let dst = user_dst.wrapping_sub(Platform::get_user_va_offset()) as *mut u8;
                 let src = SCULL_AREA.as_ptr().add(scull_src);

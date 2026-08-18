@@ -51,7 +51,9 @@ pub fn spawn_user_program(prog: &UserProgram) {
 
 pub fn setup_threads() {
     let time = riscv::register::time::read64();
-    println!("Current time: {}", time);
+    info!("Current time: {}", time);
+    println!();
+    println!();
     // sbi::timer::set_timer(time + 10_000_000).expect("Can't set timer");
 
     create_empty_thread();

@@ -71,9 +71,31 @@ pub fn setup_trap() {
 
 #[export_name = "_handle_trap_rust"]
 extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
-    // println!("Current SP: {:p}", frame);
     let x: Trap<Interrupt, Exception> = riscv::register::scause::read().cause().try_into().unwrap();
-    println!("Cause: {x:?}");
+
+    // Special bypass for direct SBI calls such as sbi_print!
+    // Useful to print information immediately instead of waiting in queue for driver
+    if matches!(x, Trap::Exception(Exception::UserEnvCall)) && frame.a7 >= (('A' as usize) * 256) {
+        // println!("Redirecting UserEnvCall to SBI");
+        unsafe {
+            core::arch::asm!(
+            "ecall",
+            inlateout("a0") frame.a0 => frame.a0,
+            inlateout("a1") frame.a1 => frame.a1,
+            in("a2") frame.a2,
+            in("a3") frame.a3,
+            in("a4") frame.a4,
+            in("a5") frame.a5,
+            in("a6") frame.a6,
+            in("a7") frame.a7,
+            options(nostack),
+            );
+        }
+        frame.pc += 4;
+        return false;
+    }
+
+    info!("Trap cause: {x:?}");
 
     let mut need_reschedule = false;
 
@@ -83,26 +105,8 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
         }
 
         Trap::Exception(Exception::UserEnvCall) => {
-            if frame.a7 < (('A' as usize) * 256) {
-                // println!("Received non-SBI UserEnvCall");
-                handle_syscall(frame.a7, frame.a0, frame.a1, frame.a2, frame.a3);
-            } else {
-                // println!("    Redirecting UserEnvCall to SBI");
-                unsafe {
-                    core::arch::asm!(
-                    "ecall",
-                    inlateout("a0") frame.a0 => frame.a0,
-                    inlateout("a1") frame.a1 => frame.a1,
-                    in("a2") frame.a2,
-                    in("a3") frame.a3,
-                    in("a4") frame.a4,
-                    in("a5") frame.a5,
-                    in("a6") frame.a6,
-                    in("a7") frame.a7,
-                    options(nostack),
-                    );
-                }
-            }
+            // println!("Received non-SBI UserEnvCall");
+            handle_syscall(frame.a7, frame.a0, frame.a1, frame.a2, frame.a3);
             frame.pc += 4;
         }
 

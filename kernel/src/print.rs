@@ -20,34 +20,34 @@ macro_rules! rich_println {
     ($prefix:tt, $($arg:tt)*) => {{
         use $crate::arch::Platform;
         use $crate::arch::traits::TargetPlatform;
-        println!("[{:.6}] {:8} {}:{}:{} - {}", Platform::micros() as f32 / 1_000_000f32, $prefix, file!(), line!(), column!(), format_args!($($arg)*));
+        println!("[{:.6}] {:8} {}:{}:{}  -  {}", Platform::micros() as f32 / 1_000_000f32, $prefix, file!(), line!(), column!(), format_args!($($arg)*));
     }};
 }
 
 #[macro_export]
 macro_rules! info {
-    ($($arg:tt)*) => {
+    ($($arg:tt)*) => {{
         rich_println!("[INFO]", $($arg)*);
-    };
+    }};
 }
 
 #[macro_export]
 macro_rules! warn {
-    ($($arg:tt)*) => {
+    ($($arg:tt)*) => {{
         rich_println!("[WARN]", $($arg)*);
-    };
+    }};
 }
 
 #[macro_export]
 macro_rules! error {
-    ($($arg:tt)*) => {
+    ($($arg:tt)*) => {{
         rich_println!("[ERROR]", $($arg)*);
-    };
+    }};
 }
 
 #[macro_export]
 macro_rules! debug {
-    ($($arg:tt)*) => {
+    ($($arg:tt)*) => {{
         rich_println!("[DEBUG]", $($arg)*);
-    };
+    }};
 }

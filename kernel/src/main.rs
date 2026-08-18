@@ -37,11 +37,11 @@ pub fn kernel_main(_ctx: BootContext) -> ! {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    println!("Something went wrong.");
-    println!("{}", info);
-    println!("Shutting down...");
+    error!("Something went wrong.");
+    error!("{}", info);
+    error!("Shutting down...");
     riscv::asm::wfi();
-    println!("After shutting down...");
+    error!("After shutting down...");
     // sbi::system_reset::system_reset(ResetType::, ResetReason::SystemFailure).unwrap();
 
     loop {
