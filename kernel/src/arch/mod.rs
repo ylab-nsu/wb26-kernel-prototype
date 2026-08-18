@@ -2,6 +2,8 @@ use static_assertions::assert_impl_all;
 
 use crate::arch::traits::{TargetAddress, TargetAddressSpace, TargetContext, TargetDebugWriter, TargetMapping, TargetPhysicalAllocation, TargetPhysicalAllocator, TargetPlatform, TargetTrapFrame};
 
+pub use crate::arch::riscv::threading::event::{TickInstant, add_timer};
+
 pub mod traits;
 
 mod common;

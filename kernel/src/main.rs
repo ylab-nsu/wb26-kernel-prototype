@@ -18,14 +18,35 @@ pub mod vm;
 
 use core::panic::PanicInfo;
 
+use crate::arch::add_timer;
 use crate::arch::{traits::TargetPlatform, Platform};
 use crate::boot::BootContext;
 use crate::threading::init::setup_threads;
+use core::time::Duration;
+
+fn setup_timers() {
+    add_timer(
+        Duration::from_secs(1).into(),
+        |_| println!("----------------- Second timer"),
+        true,
+    );
+    add_timer(
+        Duration::from_secs(5).into(),
+        |_| println!("5 TIMER ---------------------"),
+        true,
+    );
+    add_timer(
+        Duration::from_secs(10).into(),
+        |_| println!("-------------------------- 10 Second timer"),
+        false,
+    );
+}
 
 pub fn kernel_main(_ctx: BootContext) -> ! {
     info!("Starting kernel (kernel_main())");
 
     setup_threads();
+    setup_timers();
     unsafe {
         Platform::ei();
     }
