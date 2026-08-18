@@ -2,8 +2,8 @@ use crate::arch::riscv::time::{TickDuration, TickInstant};
 use crate::arch::traits::TargetTimerQueue;
 use crate::sync::Mutex;
 use alloc::collections::{binary_heap::PeekMut, BinaryHeap};
-use alloc::vec::Vec;
 use core::cmp::{Eq, Ord, PartialEq, PartialOrd};
+use heapless::Vec;
 use riscv::_export::critical_section;
 
 struct Timers {
@@ -110,30 +110,37 @@ impl TargetTimerQueue for TimerQueue {
     }
 
     fn fire_timers_ready_by_time(time: Self::TargetInstant) {
-        let mut callbacks_to_fire: Vec<TimerCallback> = Vec::new();
-        critical_section::with(|_| {
-            let mut timers = TIMERS.lock();
-            while let Some(mut event) = timers.queue.peek_mut() {
-                if event.target_time <= time {
-                    callbacks_to_fire.push(event.callback);
-                    match event.inner {
-                        TimerType::Repeating => {
-                            let interval = event.target_time - event.start_time;
-                            event.start_time = time;
-                            event.target_time = time + interval;
+        loop {
+            let mut callbacks_to_fire: Vec<TimerCallback, 16> = Vec::new();
+            critical_section::with(|_| {
+                let mut timers = TIMERS.lock();
+                while let Some(mut event) = timers.queue.peek_mut() {
+                    if event.target_time <= time {
+                        if callbacks_to_fire.push(event.callback).is_err() {
+                            break;
                         }
-                        TimerType::OneShot => {
-                            PeekMut::pop(event);
+                        match event.inner {
+                            TimerType::Repeating => {
+                                let interval = event.target_time - event.start_time;
+                                event.start_time = time;
+                                event.target_time = time + interval;
+                            }
+                            TimerType::OneShot => {
+                                PeekMut::pop(event);
+                            }
                         }
+                    } else {
+                        break;
                     }
-                } else {
-                    break;
                 }
+                timers.set_timer_from_queue_if_possible_if_sooner();
+            });
+            if callbacks_to_fire.is_empty() {
+                break;
             }
-            timers.set_timer_from_queue_if_possible_if_sooner();
-        });
-        for callback in callbacks_to_fire {
-            (callback)(time);
+            for callback in callbacks_to_fire {
+                (callback)(time);
+            }
         }
     }
 
