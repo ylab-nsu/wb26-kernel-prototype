@@ -11,6 +11,7 @@ pub mod allocator;
 pub mod arch;
 pub mod boot;
 pub mod drivers;
+pub mod executor;
 pub mod sync;
 mod syscall;
 pub mod threading;
