@@ -107,7 +107,6 @@ version = "0.1.0"
 dependencies = [
  "bitfield-struct",
  "bitmap-allocator",
- "cfg-if",
  "embedded-alloc",
  "fdt",
  "heapless",

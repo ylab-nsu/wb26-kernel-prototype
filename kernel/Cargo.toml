@@ -17,7 +17,6 @@ bench = false
 #spin = "0.10.0"
 #talc = { version = "4.4.3", default-features = false, features = ["lock_api"] }
 
-cfg-if = "1.0.4"
 static_assertions = "1.1.0"
 
 sbi = "0.3.0"

@@ -7,8 +7,8 @@ pub mod traits;
 mod common;
 mod macros;
 
-cfg_if::cfg_if! {
-    if #[cfg(target_arch = "riscv64")] {
+cfg_select! {
+    target_arch = "riscv64" => {
         mod riscv;
         pub type VirtualAddress = riscv::vm::Sv39VirtualAddress;
         pub type PhysicalAddress = riscv::vm::Sv39PhysicalAddress;
@@ -18,12 +18,13 @@ cfg_if::cfg_if! {
         pub type DebugWriter = riscv::write::SbiWriter;
         pub type AddressSpace = riscv::vm::address_space::Sv39AddressSpace;
         pub type Mapping = riscv::vm::address_space::Sv39Mapping;
-        
+
         pub type TrapFrame = riscv::threading::trap::RiscvTrapFrame;
         pub type Context = riscv::threading::switch::RiscvContext;
 
         pub use riscv::mmu::set_satp;
-    } else {
+    }
+    _ => {
         compile_error!("Unsupported platform");
     }
 }
