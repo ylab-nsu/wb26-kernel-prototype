@@ -6,7 +6,40 @@ use alloc::vec::Vec;
 use core::cmp::{Eq, Ord, PartialEq, PartialOrd};
 use riscv::_export::critical_section;
 
-static TIMERS: Mutex<BinaryHeap<Timer>> = Mutex::new(BinaryHeap::new());
+struct Timers {
+    queue: BinaryHeap<Timer>,
+    current_target_time: Option<TickInstant>,
+}
+
+impl Timers {
+    const fn new() -> Self {
+        Self {
+            queue: BinaryHeap::new(),
+            current_target_time: None,
+        }
+    }
+
+    fn set_timer_if_different(&mut self, target_time: Option<TickInstant>) {
+        if self.current_target_time != target_time {
+            self.current_target_time = target_time;
+            if let Some(next_time) = target_time {
+                sbi::timer::set_timer(next_time.get_ticks()).expect("Can't set timer");
+            } else {
+                sbi::timer::set_timer(u64::MAX).expect("Can't set timer");
+            }
+        }
+    }
+
+    fn set_timer_from_queue_if_possible_if_different(&mut self) {
+        self.set_timer_if_different(self.get_next_fire_time_from_queue());
+    }
+
+    fn get_next_fire_time_from_queue(&self) -> Option<TickInstant> {
+        self.queue.peek().map(|e| e.target_time)
+    }
+}
+
+static TIMERS: Mutex<Timers> = Mutex::new(Timers::new());
 
 enum TimerType {
     OneShot,
@@ -48,16 +81,6 @@ impl Eq for Timer {}
 
 pub struct TimerQueue;
 
-impl TimerQueue {
-    fn set_timer_if_possible_no_critical() {
-        if let Some(next_time) = Self::get_next_fire_time_no_critical() {
-            sbi::timer::set_timer(next_time.get_ticks()).expect("Can't set timer");
-        } else {
-            sbi::timer::set_timer(u64::MAX).expect("Can't set timer");
-        }
-    }
-}
-
 impl TargetTimerQueue for TimerQueue {
     type TargetDuration = TickDuration;
     type TargetInstant = TickInstant;
@@ -71,46 +94,43 @@ impl TargetTimerQueue for TimerQueue {
     ) {
         let target_time = start_time + interval;
         critical_section::with(|_| {
-            {
-                TIMERS.lock().push(Timer {
-                    target_time: target_time,
-                    start_time: start_time,
-                    callback,
-                    inner: if repeat {
-                        TimerType::Repeating
-                    } else {
-                        TimerType::OneShot
-                    },
-                });
-            }
-            Self::set_timer_if_possible_no_critical();
+            let mut timers = TIMERS.lock();
+            timers.queue.push(Timer {
+                target_time: target_time,
+                start_time: start_time,
+                callback,
+                inner: if repeat {
+                    TimerType::Repeating
+                } else {
+                    TimerType::OneShot
+                },
+            });
+            timers.set_timer_from_queue_if_possible_if_different();
         });
     }
 
     fn fire_timers_ready_by_time(time: Self::TargetInstant) {
         let mut callbacks_to_fire: Vec<TimerCallback> = Vec::new();
         critical_section::with(|_| {
-            {
-                let mut timers = TIMERS.lock();
-                while let Some(mut event) = timers.peek_mut() {
-                    if event.target_time <= time {
-                        callbacks_to_fire.push(event.callback);
-                        match event.inner {
-                            TimerType::Repeating => {
-                                let interval = event.target_time - event.start_time;
-                                event.start_time = time;
-                                event.target_time = time + interval;
-                            }
-                            TimerType::OneShot => {
-                                PeekMut::pop(event);
-                            }
+            let mut timers = TIMERS.lock();
+            while let Some(mut event) = timers.queue.peek_mut() {
+                if event.target_time <= time {
+                    callbacks_to_fire.push(event.callback);
+                    match event.inner {
+                        TimerType::Repeating => {
+                            let interval = event.target_time - event.start_time;
+                            event.start_time = time;
+                            event.target_time = time + interval;
                         }
-                    } else {
-                        break;
+                        TimerType::OneShot => {
+                            PeekMut::pop(event);
+                        }
                     }
+                } else {
+                    break;
                 }
             }
-            Self::set_timer_if_possible_no_critical();
+            timers.set_timer_from_queue_if_possible_if_different();
         });
         for callback in callbacks_to_fire {
             (callback)(time);
@@ -122,6 +142,6 @@ impl TargetTimerQueue for TimerQueue {
     }
 
     fn get_next_fire_time_no_critical() -> Option<Self::TargetInstant> {
-        TIMERS.lock().peek().map(|e| e.target_time)
+        TIMERS.lock().get_next_fire_time_from_queue()
     }
 }
