@@ -111,12 +111,12 @@ impl TargetTimerQueue for TimerQueue {
 
     fn fire_timers_ready_by_time(time: Self::TargetInstant) {
         loop {
-            let mut callbacks_to_fire: Vec<TimerCallback, 16> = Vec::new();
+            let mut callbacks_to_call: Vec<TimerCallback, 16> = Vec::new();
             {
                 let mut timers = TIMERS.lock();
                 while let Some(mut event) = timers.queue.peek_mut() {
                     if event.target_time <= time {
-                        if callbacks_to_fire.push(event.callback).is_err() {
+                        if callbacks_to_call.push(event.callback).is_err() {
                             break;
                         }
                         match event.inner {
@@ -135,10 +135,10 @@ impl TargetTimerQueue for TimerQueue {
                 }
                 timers.set_timer_from_queue_if_possible_if_sooner();
             };
-            if callbacks_to_fire.is_empty() {
+            if callbacks_to_call.is_empty() {
                 break;
             }
-            for callback in callbacks_to_fire {
+            for callback in callbacks_to_call {
                 (callback)(time);
             }
         }
