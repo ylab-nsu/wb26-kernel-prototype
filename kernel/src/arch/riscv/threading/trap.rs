@@ -105,11 +105,6 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
             need_reschedule = true;
             println!("Timer interrupt");
             TimerQueue::fire_ready_timers();
-            if let Some(next_time) = TimerQueue::get_next_fire_time() {
-                sbi::timer::set_timer(next_time.get_ticks()).expect("Can't set timer");
-            } else {
-                sbi::timer::set_timer(u64::MAX).expect("Can't set timer");
-            }
         }
 
         Trap::Exception(Exception::UserEnvCall) => {
