@@ -9,7 +9,7 @@ pub type Tick = u64;
 const TICKS_PER_MICROSECOND: Tick = 10;
 
 // Special type for duration in ticks
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct TickDuration {
     ticks: Tick,
 }

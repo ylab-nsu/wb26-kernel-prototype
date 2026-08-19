@@ -105,19 +105,23 @@ pub trait TargetInstant: Copy {
     fn now() -> Self;
 }
 
-pub type TargetTimerCallback = fn(PlatformInstant);
+#[derive(Clone)]
+pub enum TargetTimerCallback {
+    Reschedule,
+    // Inside interrupt
+    Immediate { callback: fn(PlatformInstant) },
+    // TODO: Elsewhere
+    Soft { callback: fn() },
+}
+
+impl TargetTimerCallback {
+    pub fn immediate(callback: fn(PlatformInstant)) -> Self {
+        TargetTimerCallback::Immediate { callback }
+    }
+}
+
 
 pub trait TargetTimerQueue {
-    fn add_timer_at(
-        start_time: PlatformInstant,
-        interval: PlatformDuration,
-        callback: TargetTimerCallback,
-        repeat: bool,
-    );
-
-    fn add_timer(interval: PlatformDuration, callback: TargetTimerCallback, repeat: bool) {
-        Self::add_timer_at(PlatformInstant::now(), interval, callback, repeat);
-    }
-    fn get_next_fire_time() -> Option<PlatformInstant>;
-    fn get_next_fire_time_no_critical() -> Option<PlatformInstant>;
+    fn add_oneshot_timer(delta: PlatformDuration, callback: TargetTimerCallback);
+    fn add_repeating_timer(interval: PlatformDuration, callback: TargetTimerCallback);
 }

@@ -102,9 +102,8 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
 
     match x {
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
-            need_reschedule = true;
             println!("Timer interrupt");
-            fire_ready_timers();
+            need_reschedule = fire_ready_timers();
         }
 
         Trap::Exception(Exception::UserEnvCall) => {

@@ -18,26 +18,35 @@ pub mod vm;
 
 use core::panic::PanicInfo;
 
-use crate::arch::{traits::TargetPlatform, traits::TargetTimerQueue, Platform, TimerQueue};
+use crate::arch::traits::TargetTimerQueue;
+use crate::arch::{
+    traits::TargetInstant, traits::TargetPlatform, traits::TargetTimerCallback, Platform,
+    PlatformInstant, TimerQueue,
+};
 use crate::boot::BootContext;
 use crate::threading::init::setup_threads;
 use core::time::Duration;
 
 fn setup_timers() {
-    TimerQueue::add_timer(
+    TimerQueue::add_repeating_timer(
         Duration::from_secs(1).into(),
-        |_| println!("----------------- Second timer"),
-        true,
+        TargetTimerCallback::immediate(|_| {
+            info!("----------------- 1 Second timer -----------------")
+        }),
     );
-    TimerQueue::add_timer(
-        Duration::from_secs(5).into(),
-        |_| println!("5 TIMER ---------------------"),
-        true,
+    TimerQueue::add_repeating_timer(
+        Duration::from_secs(3).into(),
+        TargetTimerCallback::immediate(|_| {
+            info!("----------------- 3 Second syncronized timer -----------------")
+        }),
     );
-    TimerQueue::add_timer(
+    TimerQueue::add_oneshot_timer(
         Duration::from_secs(10).into(),
-        |_| println!("-------------------------- 10 Second timer"),
-        false,
+        TargetTimerCallback::immediate(|_| info!("-------------------------- 10 Second timer")),
+    );
+    TimerQueue::add_repeating_timer(
+        Duration::from_secs(1).into(),
+        TargetTimerCallback::Reschedule
     );
 }
 
