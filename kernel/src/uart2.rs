@@ -12,10 +12,16 @@ const LSR_THR_EMPTY: u8 = 1 << 5;
 const IER_RX_AVAILABLE: u8 = 1 << 0;
 const IER_TX_EMPTY: u8 = 1 << 1;
 
-// IIR
+// IIR bits
 const IIR_NO_INTERRUPT: u8 = 1 << 0;
 const IIR_TX_EMPTY: u8 = 0b001 << 1;
 const IIR_RX_AVAILABLE: u8 = 0b010 << 1;
+
+// FCR bits
+const FCR_ENABLE_FIFO: u8 = 1 << 0;
+const FCR_RX_CLEAR_FIFO: u8 = 1 << 1;
+const FCT_TX_CLEAR_FIFO: u8 = 1 << 2;
+
 
 
 pub struct UART{
@@ -41,6 +47,17 @@ impl UART {
 		UART { regs: addr as *mut Registers}
 	}
 
+	pub fn init(&self) {
+		// Configuring FIFO
+		unsafe {
+			write_volatile(
+				addr_of_mut!((*self.regs).iir_fcr),
+				FCR_ENABLE_FIFO | FCR_RX_CLEAR_FIFO | FCT_TX_CLEAR_FIFO
+			);
+		}
+
+	}
+
     /// Отправляет один байт
     pub fn putc(&self, byte: u8) {
         while self.lsr() & LSR_THR_EMPTY == 0 {}
@@ -56,9 +73,21 @@ impl UART {
 		unsafe  {read_volatile(addr_of_mut!((*self.regs).thr_rbr)) }
 	}
 
+	pub fn enable_rx_interrupt(&self) {
+		unsafe {
+			let ier = read_volatile(addr_of_mut!((*self.regs).ier));
+			write_volatile(
+				addr_of_mut!((*self.regs).ier), 
+				ier | IER_RX_AVAILABLE
+			);
+		}
+	}
+
     fn lsr(&self) -> u8 {
         unsafe {
             core::ptr::read_volatile(&(*self.regs).lsr)
         }
     }
+
+
 }

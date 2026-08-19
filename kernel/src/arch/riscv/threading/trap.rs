@@ -1,8 +1,11 @@
 use crate::arch::traits::TargetTrapFrame;
 use crate::syscall::handle_syscall;
+use crate::arch::riscv::plic::{plic_claim, plic_complete};
+use riscv::interrupt::Interrupt::SupervisorExternal;
 use riscv::interrupt::{Exception, Interrupt, Trap};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec::Stvec;
+
 
 #[repr(C)]
 #[derive(Debug, Default, Clone)]
@@ -116,9 +119,15 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
             panic!("InstructionFault {epc:x} {}", frame.pc);
         }
 
+        Trap::Interrupt(Interrupt::SupervisorExternal) => {
+			let irq  = plic_claim(); 
+			println!("===Interrupt from===:{:?}",irq);
+		}
+
         Trap::Interrupt(cause) => {
-            println!("interrupt:{cause:?}");
+             println!("exception:{cause:?}");
         }
+		
         Trap::Exception(cause) => {
             println!("exception:{cause:?}");
         }

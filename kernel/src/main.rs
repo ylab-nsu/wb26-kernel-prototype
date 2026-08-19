@@ -21,6 +21,7 @@ mod uart2;
 use core::panic::PanicInfo;
 
 use crate::arch::{traits::TargetPlatform, Platform};
+
 use crate::boot::BootContext;
 use crate::threading::init::setup_threads;
 use crate::uart2::UART;
@@ -28,7 +29,14 @@ use crate::uart2::UART;
 pub fn kernel_main(_ctx: BootContext) -> ! {
     info!("Starting kernel (kernel_main())");
 
+
+	let mut uart = UART::new(0x10000000);
+	uart.init();
+	uart.enable_rx_interrupt();
+	
+	
     setup_threads();
+
     unsafe {
          Platform::ei();
     }

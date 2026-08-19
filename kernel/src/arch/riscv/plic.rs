@@ -73,7 +73,7 @@ pub fn plic_complete(irq: u32) {
 // Initialization
 // ------------------------------------------------------------
 
-pub fn plic_init() {
+pub fn init_plic() {
     // Give UART interrupt priority 1
     plic_set_priority(UART_IRQ, 1);
 

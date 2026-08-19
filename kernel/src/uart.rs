@@ -40,23 +40,19 @@ pub fn put_into_queue(message: UartDriverMessage, queue: &mpmc::QueueView<UartDr
 }
 
 pub extern "C" fn uart_driver() -> ! {
-
-	let mut uart = UART::new(0x10000000);
-	uart.putc('A' as u8);
 	loop {
-		let c = uart.getc();
-		uart.putc(c);
+		
 	}
 
-    loop {
-        let message: Option<UartDriverMessage> = critical_section::with(|_| UART_DRIVER_QUEUE.dequeue());
-        match message {
-            None => {
-                info!("UART driver yields");
-                reschedule();
-                info!("UART driver back to work");
-            }
-            _ => {}
-        }
-    }
+    // loop {
+    //     let message: Option<UartDriverMessage> = critical_section::with(|_| UART_DRIVER_QUEUE.dequeue());
+    //     match message {
+    //         None => {
+    //             info!("UART driver yields");
+    //             reschedule();
+    //             info!("UART driver back to work");
+    //         }
+    //         _ => {}
+    //     }
+    // }
 }
