@@ -6,7 +6,7 @@ const PCI_CLASS_REG: u16 = 0x08;
 const PCI_BAR0_REG: u16 = 0x10;
 
 pub extern "C" fn driver_task() -> ! {
-    for dev in 0..23 {
+    for dev in 0..32 {
         for func in 0..8 {
             let id = PciBus::pci_read16(0, dev, func, 0x00);
             if (id  == 0xFFFF) {
