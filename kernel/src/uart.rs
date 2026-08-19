@@ -1,27 +1,19 @@
 use crate::arch::traits::TargetPlatform;
 use crate::arch::Platform;
 use crate::threading::scheduler::reschedule;
+use crate::uart2::UART;
 use heapless::mpmc;
 use riscv::_export::critical_section;
 
+
 pub enum UartDriverMessage {
-    PrintNumber {
-        number: usize,
+    Read {
+        addr: usize,
     },
-    PrintString {
-        user_addr: usize,
-        len: usize,
+    Write {
+        addr: usize,
     },
-    WriteScull {
-        user_src: usize,
-        scull_dst: usize,
-        count: usize,
-    },
-    ReadScull {
-        user_dst: usize,
-        scull_src: usize,
-        count: usize,
-    },
+    Flush,
 }
 
 #[allow(deprecated)]
@@ -48,8 +40,16 @@ pub fn put_into_queue(message: UartDriverMessage, queue: &mpmc::QueueView<UartDr
 }
 
 pub extern "C" fn uart_driver() -> ! {
+
+	let mut uart = UART::new(0x10000000);
+	uart.putc('A' as u8);
+	loop {
+		let c = uart.getc();
+		uart.putc(c);
+	}
+
     loop {
-        let message = critical_section::with(|_| UART_DRIVER_QUEUE.dequeue());
+        let message: Option<UartDriverMessage> = critical_section::with(|_| UART_DRIVER_QUEUE.dequeue());
         match message {
             None => {
                 info!("UART driver yields");

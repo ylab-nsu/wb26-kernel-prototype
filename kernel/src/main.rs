@@ -16,19 +16,21 @@ mod syscall;
 pub mod threading;
 pub mod vm;
 mod uart;
+mod uart2;
 
 use core::panic::PanicInfo;
 
 use crate::arch::{traits::TargetPlatform, Platform};
 use crate::boot::BootContext;
 use crate::threading::init::setup_threads;
+use crate::uart2::UART;
 
 pub fn kernel_main(_ctx: BootContext) -> ! {
     info!("Starting kernel (kernel_main())");
 
     setup_threads();
     unsafe {
-        Platform::ei();
+         Platform::ei();
     }
 
     loop {
