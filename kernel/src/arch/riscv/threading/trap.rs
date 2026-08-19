@@ -1,5 +1,5 @@
-use crate::arch::riscv::threading::event::TimerQueue;
-use crate::arch::traits::{TargetTimerQueue, TargetTrapFrame};
+use crate::arch::riscv::threading::event::{TimerQueue, fire_ready_timers};
+use crate::arch::traits::{TargetTrapFrame};
 use crate::syscall::handle_syscall;
 use riscv::interrupt::{Exception, Interrupt, Trap};
 use riscv::register::mtvec::TrapMode;
@@ -104,7 +104,7 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             need_reschedule = true;
             println!("Timer interrupt");
-            TimerQueue::fire_ready_timers();
+            fire_ready_timers();
         }
 
         Trap::Exception(Exception::UserEnvCall) => {

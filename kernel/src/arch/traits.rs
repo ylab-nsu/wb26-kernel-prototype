@@ -1,6 +1,9 @@
 use crate::{
     allocator::AllocatorError,
-    arch::{Mapping, PhysicalAddress, PhysicalAllocation, VirtualAddress},
+    arch::{
+        Mapping, PhysicalAddress, PhysicalAllocation, PlatformDuration, PlatformInstant,
+        VirtualAddress,
+    },
     vm::{MappingFlags, MappingPermissions},
 };
 
@@ -98,33 +101,23 @@ pub trait TargetContext: Default + Clone {
     fn with_sp(self, sp: usize) -> Self;
 }
 
-pub trait TargetInstant {
+pub trait TargetInstant: Copy {
     fn now() -> Self;
 }
 
-pub trait TargetTimerQueue {
-    type TargetDuration;
-    type TargetInstant: TargetInstant;
-    type TargetTimerCallback: FnMut(Self::TargetInstant);
+type TargetTimerCallback = fn(PlatformInstant);
 
+pub trait TargetTimerQueue {
     fn add_timer_at(
-        start_time: Self::TargetInstant,
-        interval: Self::TargetDuration,
-        callback: Self::TargetTimerCallback,
+        start_time: PlatformInstant,
+        interval: PlatformDuration,
+        callback: TargetTimerCallback,
         repeat: bool,
     );
 
-    fn add_timer(
-        interval: Self::TargetDuration,
-        callback: Self::TargetTimerCallback,
-        repeat: bool,
-    ) {
-        Self::add_timer_at(Self::TargetInstant::now(), interval, callback, repeat);
+    fn add_timer(interval: PlatformDuration, callback: TargetTimerCallback, repeat: bool) {
+        Self::add_timer_at(PlatformInstant::now(), interval, callback, repeat);
     }
-    fn fire_timers_ready_by_time(time: Self::TargetInstant);
-    fn fire_ready_timers() {
-        Self::fire_timers_ready_by_time(Self::TargetInstant::now());
-    }
-    fn get_next_fire_time() -> Option<Self::TargetInstant>;
-    fn get_next_fire_time_no_critical() -> Option<Self::TargetInstant>;
+    fn get_next_fire_time() -> Option<PlatformInstant>;
+    fn get_next_fire_time_no_critical() -> Option<PlatformInstant>;
 }

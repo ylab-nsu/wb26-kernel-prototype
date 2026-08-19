@@ -1,5 +1,5 @@
 use crate::arch::riscv::time::{TickDuration, TickInstant};
-use crate::arch::traits::TargetTimerQueue;
+use crate::arch::traits::{TargetInstant, TargetTimerQueue};
 use crate::sync::Mutex;
 use alloc::collections::{binary_heap::PeekMut, BinaryHeap};
 use core::cmp::{Eq, Ord, PartialEq, PartialOrd};
@@ -79,17 +79,52 @@ impl PartialEq for Timer {
 
 impl Eq for Timer {}
 
+fn fire_timers_ready_by_time(time: TickInstant) {
+    loop {
+        let mut callbacks_to_call: Vec<TimerCallback, 16> = Vec::new();
+        {
+            let mut timers = TIMERS.lock();
+            while let Some(mut event) = timers.queue.peek_mut() {
+                if event.target_time <= time {
+                    if callbacks_to_call.push(event.callback).is_err() {
+                        break;
+                    }
+                    match event.inner {
+                        TimerType::Repeating => {
+                            let interval = event.target_time - event.start_time;
+                            event.start_time = time;
+                            event.target_time = time + interval;
+                        }
+                        TimerType::OneShot => {
+                            PeekMut::pop(event);
+                        }
+                    }
+                } else {
+                    break;
+                }
+            }
+            timers.set_timer_from_queue_if_possible_if_sooner();
+        };
+        if callbacks_to_call.is_empty() {
+            break;
+        }
+        for callback in callbacks_to_call {
+            (callback)(time);
+        }
+    }
+}
+
+pub fn fire_ready_timers() {
+    fire_timers_ready_by_time(TickInstant::now());
+}
+
 pub struct TimerQueue;
 
 impl TargetTimerQueue for TimerQueue {
-    type TargetDuration = TickDuration;
-    type TargetInstant = TickInstant;
-    type TargetTimerCallback = TimerCallback;
-
     fn add_timer_at(
-        start_time: Self::TargetInstant,
-        interval: Self::TargetDuration,
-        callback: Self::TargetTimerCallback,
+        start_time: TickInstant,
+        interval: TickDuration,
+        callback: TimerCallback,
         repeat: bool,
     ) {
         let target_time = start_time + interval;
@@ -109,46 +144,11 @@ impl TargetTimerQueue for TimerQueue {
         });
     }
 
-    fn fire_timers_ready_by_time(time: Self::TargetInstant) {
-        loop {
-            let mut callbacks_to_call: Vec<TimerCallback, 16> = Vec::new();
-            {
-                let mut timers = TIMERS.lock();
-                while let Some(mut event) = timers.queue.peek_mut() {
-                    if event.target_time <= time {
-                        if callbacks_to_call.push(event.callback).is_err() {
-                            break;
-                        }
-                        match event.inner {
-                            TimerType::Repeating => {
-                                let interval = event.target_time - event.start_time;
-                                event.start_time = time;
-                                event.target_time = time + interval;
-                            }
-                            TimerType::OneShot => {
-                                PeekMut::pop(event);
-                            }
-                        }
-                    } else {
-                        break;
-                    }
-                }
-                timers.set_timer_from_queue_if_possible_if_sooner();
-            };
-            if callbacks_to_call.is_empty() {
-                break;
-            }
-            for callback in callbacks_to_call {
-                (callback)(time);
-            }
-        }
-    }
-
-    fn get_next_fire_time() -> Option<Self::TargetInstant> {
+    fn get_next_fire_time() -> Option<TickInstant> {
         critical_section::with(|_| Self::get_next_fire_time_no_critical())
     }
 
-    fn get_next_fire_time_no_critical() -> Option<Self::TargetInstant> {
+    fn get_next_fire_time_no_critical() -> Option<TickInstant> {
         TIMERS.lock().get_next_fire_time_from_queue()
     }
 }
