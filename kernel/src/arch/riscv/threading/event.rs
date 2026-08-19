@@ -1,5 +1,5 @@
 use crate::arch::riscv::time::{TickDuration, TickInstant};
-use crate::arch::traits::{TargetInstant, TargetTimerQueue};
+use crate::arch::traits::{TargetInstant, TargetTimerCallback, TargetTimerQueue};
 use crate::sync::Mutex;
 use alloc::collections::{binary_heap::PeekMut, BinaryHeap};
 use core::cmp::{Eq, Ord, PartialEq, PartialOrd};
@@ -46,11 +46,9 @@ enum TimerType {
     Repeating,
 }
 
-type TimerCallback = fn(TickInstant);
-
 // Fire time is passed into the callback
 struct Timer {
-    callback: TimerCallback,
+    callback: TargetTimerCallback,
     target_time: TickInstant,
     start_time: TickInstant,
     inner: TimerType,
@@ -81,7 +79,7 @@ impl Eq for Timer {}
 
 fn fire_timers_ready_by_time(time: TickInstant) {
     loop {
-        let mut callbacks_to_call: Vec<TimerCallback, 16> = Vec::new();
+        let mut callbacks_to_call: Vec<TargetTimerCallback, 16> = Vec::new();
         {
             let mut timers = TIMERS.lock();
             while let Some(mut event) = timers.queue.peek_mut() {
@@ -124,7 +122,7 @@ impl TargetTimerQueue for TimerQueue {
     fn add_timer_at(
         start_time: TickInstant,
         interval: TickDuration,
-        callback: TimerCallback,
+        callback: TargetTimerCallback,
         repeat: bool,
     ) {
         let target_time = start_time + interval;

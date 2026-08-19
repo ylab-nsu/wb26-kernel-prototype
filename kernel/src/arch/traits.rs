@@ -105,7 +105,7 @@ pub trait TargetInstant: Copy {
     fn now() -> Self;
 }
 
-type TargetTimerCallback = fn(PlatformInstant);
+pub type TargetTimerCallback = fn(PlatformInstant);
 
 pub trait TargetTimerQueue {
     fn add_timer_at(
