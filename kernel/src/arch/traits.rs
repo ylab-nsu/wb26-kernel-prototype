@@ -97,3 +97,9 @@ pub trait TargetContext: Default + Clone {
     fn with_ra(self, ra: usize) -> Self;
     fn with_sp(self, sp: usize) -> Self;
 }
+
+pub trait TargetPciBus {
+    fn pci_read16(bus: u8, dev: u8, func: u8, off: u16) -> u16;
+    fn pci_read32(bus: u8, dev: u8, func: u8, off: u16) -> u32;
+    fn pci_write16(bus: u8, dev: u8, func: u8, off: u16, val: u16);
+}

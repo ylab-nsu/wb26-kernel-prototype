@@ -1,5 +1,5 @@
 use crate::arch::traits::TargetTrapFrame;
-use crate::drivers::driver_task;
+use crate::pci::driver_task;
 use crate::threading::thread::{
     create_empty_thread, get_thread, spawn_kernel, spawn_user, THREADS_INDEXES,
 };
@@ -67,22 +67,6 @@ pub fn setup_threads() {
     let user_programs: [UserProgram; _] = [
         UserProgram {
             entry: unsafe { user1 },
-            stack_size: 64 * 1024,
-        },
-        UserProgram {
-            entry: unsafe { og_process1 },
-            stack_size: 64 * 1024,
-        },
-        UserProgram {
-            entry: unsafe { og_process2 },
-            stack_size: 64 * 1024,
-        },
-        UserProgram {
-            entry: unsafe { og_process3 },
-            stack_size: 64 * 1024,
-        },
-        UserProgram {
-            entry: unsafe { scull_user },
             stack_size: 64 * 1024,
         },
     ];
