@@ -1,5 +1,6 @@
 use crate::arch::traits::TargetInstant;
 use core::{
+    fmt::Debug,
     ops::{Add, Sub},
     time::Duration,
 };
@@ -8,6 +9,7 @@ pub type Tick = u64;
 const TICKS_PER_MICROSECOND: Tick = 10;
 
 // Special type for duration in ticks
+#[derive(Debug)]
 pub struct TickDuration {
     ticks: Tick,
 }
@@ -33,7 +35,7 @@ impl Into<Duration> for TickDuration {
 }
 
 // Instant at home
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct TickInstant {
     time_ticks: Tick,
 }
