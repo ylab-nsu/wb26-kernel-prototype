@@ -1,5 +1,8 @@
 use crate::arch::riscv::time::{TickDuration, TickInstant};
-use crate::arch::traits::{TargetInstant, TargetTimerCallback, TargetTimerQueue};
+use crate::arch::traits::{
+    TargetInstant, TargetTimerCallback, TargetTimerCallbackContext, TargetTimerImmediateCallback,
+    TargetTimerQueue,
+};
 use crate::sync::Mutex;
 use alloc::collections::{binary_heap::PeekMut, BinaryHeap};
 use core::cmp::{Eq, Ord, PartialEq, PartialOrd};
@@ -73,21 +76,46 @@ impl PartialEq for Timer {
 
 impl Eq for Timer {}
 
+enum PreparedTimerCallback {
+    Reschedule,
+    Immediate {
+        callback: TargetTimerImmediateCallback,
+        ctx: TargetTimerCallbackContext,
+    },
+}
+
 fn fire_timers_ready_by_time(time: TickInstant) -> bool {
     let mut reschedule = false;
     loop {
-        let mut callbacks_to_call: Vec<TargetTimerCallback, 16> = Vec::new();
+        let mut callbacks_to_call: Vec<PreparedTimerCallback, 16> = Vec::new();
         {
             let mut timers = TIMERS.lock();
             while let Some(mut event) = timers.queue.peek_mut() {
                 if event.target_time <= time {
-                    if callbacks_to_call.push(event.callback.clone()).is_err() {
+                    if callbacks_to_call
+                        .push(match event.callback {
+                            TargetTimerCallback::Reschedule => PreparedTimerCallback::Reschedule,
+                            TargetTimerCallback::Immediate { callback } => {
+                                PreparedTimerCallback::Immediate {
+                                    callback,
+                                    ctx: TargetTimerCallbackContext {
+                                        target_time: event.target_time,
+                                        handle_time: time,
+                                    },
+                                }
+                            }
+                            TargetTimerCallback::Soft { callback: _ } => {
+                                todo!("Implement soft timers")
+                            }
+                        })
+                        .is_err()
+                    {
                         break;
                     }
                     match event.kind {
                         TimerKind::Repeating { interval } => {
                             event.start_or_last_fire_time = time;
-                            event.target_time = time + interval;
+                            event.target_time = event.target_time + interval;
                         }
                         TimerKind::OneShot => {
                             PeekMut::pop(event);
@@ -101,16 +129,13 @@ fn fire_timers_ready_by_time(time: TickInstant) -> bool {
         if callbacks_to_call.is_empty() {
             break;
         }
-        for callback in callbacks_to_call {
-            match callback {
-                TargetTimerCallback::Reschedule => {
+        for prepared_callback in callbacks_to_call {
+            match prepared_callback {
+                PreparedTimerCallback::Reschedule => {
                     reschedule = true;
                 }
-                TargetTimerCallback::Immediate { callback } => {
-                    (callback)(time);
-                }
-                TargetTimerCallback::Soft { callback: _ } => {
-                    todo!("Implement soft timers");
+                PreparedTimerCallback::Immediate { callback, ctx } => {
+                    (callback)(ctx);
                 }
             }
         }

@@ -105,21 +105,31 @@ pub trait TargetInstant: Copy {
     fn now() -> Self;
 }
 
+pub struct TargetTimerCallbackContext {
+    pub handle_time: PlatformInstant,
+    pub target_time: PlatformInstant,
+}
+
+pub type TargetTimerImmediateCallback = fn(TargetTimerCallbackContext);
+
 #[derive(Clone)]
 pub enum TargetTimerCallback {
     Reschedule,
     // Inside interrupt
-    Immediate { callback: fn(PlatformInstant) },
+    Immediate {
+        callback: TargetTimerImmediateCallback,
+    },
     // TODO: Elsewhere
-    Soft { callback: fn() },
+    Soft {
+        callback: fn(),
+    },
 }
 
 impl TargetTimerCallback {
-    pub fn immediate(callback: fn(PlatformInstant)) -> Self {
+    pub fn immediate(callback: TargetTimerImmediateCallback) -> Self {
         TargetTimerCallback::Immediate { callback }
     }
 }
-
 
 pub trait TargetTimerQueue {
     fn add_oneshot_timer(delta: PlatformDuration, callback: TargetTimerCallback);
