@@ -1,6 +1,7 @@
 use crate::arch::traits::TargetTrapFrame;
 use crate::syscall::handle_syscall;
 use crate::arch::riscv::plic::{plic_claim, plic_complete};
+use crate::uart2::UART;
 use riscv::interrupt::Interrupt::SupervisorExternal;
 use riscv::interrupt::{Exception, Interrupt, Trap};
 use riscv::register::mtvec::TrapMode;
@@ -121,7 +122,15 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
 
         Trap::Interrupt(Interrupt::SupervisorExternal) => {
 			let irq  = plic_claim(); 
-			println!("===Interrupt from===:{:?}",irq);
+			match irq {
+				10 =>{
+					println!("Interrupt: {}", irq);
+					let mut uart=  UART.lock();
+					uart.handle_interrupt();
+				}
+				_ => { println!("Interrupt: {}", irq);}
+			}
+			plic_complete(irq);
 		}
 
         Trap::Interrupt(cause) => {
