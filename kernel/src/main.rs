@@ -20,33 +20,56 @@ use core::panic::PanicInfo;
 
 use crate::arch::traits::TargetTimerQueue;
 use crate::arch::{
-    traits::TargetInstant, traits::TargetPlatform, traits::TargetTimerCallback, Platform,
-    PlatformInstant, TimerQueue,
+    traits::TargetInstant, traits::TargetPlatform, traits::TargetTimerCallback,
+    traits::TargetTimerCallbackContext, Platform, PlatformInstant, TimerQueue,
 };
 use crate::boot::BootContext;
 use crate::threading::init::setup_threads;
 use core::time::Duration;
+use sync::Mutex;
 
 fn setup_timers() {
+    // simple repeating timer
     TimerQueue::add_repeating_timer(
         Duration::from_secs(1).into(),
         TargetTimerCallback::immediate(|_| {
             info!("----------------- 1 Second timer -----------------")
         }),
     );
+    // repeating timer with state
     TimerQueue::add_repeating_timer(
         Duration::from_secs(3).into(),
         TargetTimerCallback::immediate(|_| {
-            info!("----------------- 3 Second syncronized timer -----------------")
+            static COUNT: Mutex<u32> = Mutex::new(0);
+            let mut count = COUNT.lock();
+            *count += 1;
+            info!(
+                "----------------- 3 Second stateful timer {} -----------------",
+                count
+            )
         }),
     );
+    // one shot timer
     TimerQueue::add_oneshot_timer(
         Duration::from_secs(10).into(),
         TargetTimerCallback::immediate(|_| info!("-------------------------- 10 Second timer")),
     );
+    // Reschedule timer
     TimerQueue::add_repeating_timer(
         Duration::from_secs(1).into(),
-        TargetTimerCallback::Reschedule
+        TargetTimerCallback::Reschedule,
+    );
+    // One shot repeating timer
+    fn oneshot_repeating_callback(_: TargetTimerCallbackContext) {
+        info!("-------------------------- One shot repeating timer");
+        TimerQueue::add_oneshot_timer(
+            Duration::from_secs(2).into(),
+            TargetTimerCallback::immediate(oneshot_repeating_callback),
+        );
+    }
+    TimerQueue::add_oneshot_timer(
+        Duration::from_secs(2).into(),
+        TargetTimerCallback::immediate(oneshot_repeating_callback),
     );
 }
 
