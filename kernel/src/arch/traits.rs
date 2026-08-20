@@ -99,6 +99,9 @@ pub trait TargetContext: Default + Clone {
 }
 
 pub trait TargetPciBus {
+    fn mmio_base() -> usize;
+    fn mmio_size() -> usize;
+
     fn pci_read8(bus: u8, dev: u8, func: u8, off: u16) -> u8;
     fn pci_read16(bus: u8, dev: u8, func: u8, off: u16) -> u16;
     fn pci_read32(bus: u8, dev: u8, func: u8, off: u16) -> u32;
