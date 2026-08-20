@@ -3,29 +3,29 @@ use crate::arch::PciBus;
 use core::ptr::{read_volatile, write_volatile};
 
 // Standard PCI Configuration Space offsets
-const PCI_VENDOR_DEVICE_REG: u16 = 0x00;
-const PCI_COMMAND_REG: u16 = 0x04;
-const PCI_CLASS_REVISION_REG: u16 = 0x08;
-const PCI_BAR0_REG: u16 = 0x10;
-const PCI_HEADER_TYPE_REG: u16 = 0x1C;
+pub const PCI_VENDOR_DEVICE_REG: u16 = 0x00;
+pub const PCI_COMMAND_REG: u16 = 0x04;
+pub const PCI_CLASS_REVISION_REG: u16 = 0x08;
+pub const PCI_BAR0_REG: u16 = 0x10;
+pub const PCI_HEADER_TYPE_REG: u16 = 0x1C;
 
 // PCI Command Register
-const PCI_COMMAND_MEMORY_SPACE: u16 = 1 << 1;
-const PCI_COMMAND_IO_SPACE: u16 = 1 << 0;
+pub const PCI_COMMAND_MEMORY_SPACE: u16 = 1 << 1;
+pub const PCI_COMMAND_IO_SPACE: u16 = 1 << 0;
 
 // Memory BAR fields
-const PCI_BAR_IO_SPACE: u32 = 1;
-const PCI_BAR_MEMORY_TYPE_MASK: u32 = 0b11 << 1;
-const PCI_BAR_MEMORY_TYPE_32: u32 = 0b00 << 1;
-const PCI_BAR_ADDRESS_MASK: u32 = 0xffff_fff0;
+pub const PCI_BAR_IO_SPACE: u32 = 1;
+pub const PCI_BAR_MEMORY_TYPE_MASK: u32 = 0b11 << 1;
+pub const PCI_BAR_MEMORY_TYPE_32: u32 = 0b00 << 1;
+pub const PCI_BAR_ADDRESS_MASK: u32 = 0xffff_fff0;
 
 // Standard PCI class codes for an SD Host Controller
-const SDHCI_CLASS: u8 = 0x08;
-const SDHCI_SUBCLASS: u8 = 0x05;
+pub const SDHCI_CLASS: u8 = 0x08;
+pub const SDHCI_SUBCLASS: u8 = 0x05;
 
-const PCI_BUS: u8 = 0;
-const PCI_DEVICES_PER_BUS: u8 = 32;
-const PCI_FUNCTIONS_PER_DEVICE: u8 = 8;
+pub const PCI_BUS: u8 = 0;
+pub const PCI_DEVICES_PER_BUS: u8 = 32;
+pub const PCI_FUNCTIONS_PER_DEVICE: u8 = 8;
 
 pub fn pci_disable_device(bus: u8, dev: u8, func: u8) {
     let command = PciBus::pci_read16(bus, dev, func, PCI_COMMAND_REG);
@@ -92,37 +92,10 @@ pub fn spawn_driver(bus: u8, dev: u8, func: u8) {
     if class_revision >> 16 == 0x0805 {
         info!("Found SDHCI");
 
-        pci_enable_device(bus, dev, func);
-
         // TODO: Actually run driver instead of "becoming" it
-        let sdhci_base = PciBus::mmio_base();
-
         unsafe {
-            // 1. Check Host Version (Offset 0xFE, 16-bit read)
-            let version_ptr = (sdhci_base + 0xFE) as *const u16;
-            let version = core::ptr::read_volatile(version_ptr);
-
-            // 2. Check Present State (Offset 0x24, 32-bit read)
-            let present_state_ptr = (sdhci_base + 0x24) as *const u32;
-            let present_state = core::ptr::read_volatile(present_state_ptr);
-            let card_inserted = (present_state & (1 << 16)) != 0;
-
-            // 3. Trigger Software Reset (Offset 0x2F, 8-bit write/read)
-            let reset_ptr = (sdhci_base + 0x2F) as *mut u8;
-            core::ptr::write_volatile(reset_ptr, 0x01); // 0x01 = Reset All
-
-            // Wait for the controller to clear the reset bit
-            let mut reset_cleared = false;
-            for _ in 0..1000 {
-                if core::ptr::read_volatile(reset_ptr) & 0x01 == 0 {
-                    reset_cleared = true;
-                    break;
-                }
-            }
-
-            info!("SDHCI Version Reg: {:#06x}", version);
-            info!("Card Inserted: {}", card_inserted);
-            info!("Reset Successful: {}", reset_cleared);
+            crate::sdhci::sdhci_pci_addr = Some((bus, dev, func));
+            crate::sdhci::driver_task();
         }
     }
 }

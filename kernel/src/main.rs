@@ -16,6 +16,7 @@ mod syscall;
 pub mod threading;
 pub mod vm;
 pub mod pci;
+pub mod sdhci;
 
 use core::panic::PanicInfo;
 
