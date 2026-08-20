@@ -15,6 +15,7 @@ pub mod sync;
 mod syscall;
 pub mod threading;
 pub mod vm;
+pub mod devices;
 
 use core::panic::PanicInfo;
 
