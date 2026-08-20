@@ -29,4 +29,16 @@ impl TargetPciBus for RiscvPciBus {
     fn pci_write16(bus: u8, dev: u8, func: u8, off: u16, val: u16) {
         unsafe { write_volatile(RiscvPciBus::pci_ecam_addr(bus, dev, func, off) as *mut u16, val) }
     }
+
+    fn pci_write32(bus: u8, dev: u8, func: u8, off: u16, val: u32) {
+        unsafe { write_volatile(RiscvPciBus::pci_ecam_addr(bus, dev, func, off) as *mut u32, val) }
+    }
+
+    fn pci_read8(bus: u8, dev: u8, func: u8, off: u16) -> u8{
+        unsafe { read_volatile(RiscvPciBus::pci_ecam_addr(bus, dev, func, off) as *const u8) }
+    }
+
+    fn pci_write8(bus: u8, dev: u8, func: u8, off: u16, val: u8) {
+        unsafe { write_volatile(RiscvPciBus::pci_ecam_addr(bus, dev, func, off) as *mut u8, val)}
+    }
 }
