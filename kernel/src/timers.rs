@@ -1,4 +1,4 @@
-use crate::PlatformInstant;
+use crate::arch::PlatformInstant;
 use alloc::boxed::Box;
 
 pub struct TimerCallbackContext {

@@ -104,6 +104,71 @@ pub trait TargetInstant: Copy {
 }
 
 pub trait TargetTimerQueue {
+    //! Trait with functions to add timers to the timer queue
+    //! 
+    //! # Examples of timers
+    //! ```
+    //! // Simple repeating timer
+    //! TimerQueue::add_repeating_timer(
+    //!     Duration::from_secs(1).into(),
+    //!     TimerCallback::immediate(|_| info!("1 Second timer")),
+    //! );
+    //! // One shot timer                                                   
+    //! TimerQueue::add_oneshot_timer(
+    //!     Duration::from_secs(10).into(),
+    //!     TimerCallback::immediate(|_| info!("10 second oneshot timer")),
+    //! );
+    //! // Repeating timer with inner state
+    //! TimerQueue::add_repeating_timer(
+    //!     Duration::from_secs(3).into(),
+    //!     TimerCallback::immediate(|_| {
+    //!         static COUNT: Mutex<u32> = Mutex::new(0);
+    //!         let mut count = COUNT.lock();
+    //!         *count += 1;
+    //!         info!(
+    //!             "3 Second stateful timer {}",
+    //!             count
+    //!         )
+    //!     }),
+    //! );
+    //! // Reschedule timer
+    //! TimerQueue::add_repeating_timer(Duration::from_secs(1).into(), TimerCallback::Reschedule);
+    //! // One shot repeating timer
+    //! fn oneshot_repeating_callback(_: TimerCallbackContext) {
+    //!     info!("One shot repeating timer");
+    //!     TimerQueue::add_oneshot_timer(
+    //!         Duration::from_secs(2).into(),
+    //!         TimerCallback::immediate(oneshot_repeating_callback),
+    //!     );
+    //! }
+    //! TimerQueue::add_oneshot_timer(
+    //!     Duration::from_secs(2).into(),
+    //!     TimerCallback::immediate(oneshot_repeating_callback),
+    //! );
+    //! // One shot timer with capture
+    //! let to_capture = 5;
+    //! TimerQueue::add_oneshot_timer(
+    //!     Duration::from_secs(4).into(),
+    //!     TimerCallback::immediate(move |_| {
+    //!         info!(
+    //!             "-------------------------- One shot timer with capture {}",
+    //!             to_capture
+    //!         );
+    //!     }),
+    //! );
+    //! // One shot timer with mutable capture
+    //! let mut to_capture_mutable = 10;
+    //! TimerQueue::add_repeating_timer(
+    //!     Duration::from_secs(4).into(),
+    //!     TimerCallback::immediate(move |_| {
+    //!         info!(
+    //!             "-------------------------- One shot timer with mut capture {}",
+    //!             to_capture_mutable
+    //!         );
+    //!         to_capture_mutable += 1;
+    //!     }),
+    //! );
+    //! ```
     fn add_oneshot_timer(delta: PlatformDuration, callback: TimerCallback);
     fn add_repeating_timer(interval: PlatformDuration, callback: TimerCallback);
 }
