@@ -4,7 +4,7 @@ use crate::arch::traits::{
     TargetTimerQueue,
 };
 use crate::sync::Mutex;
-use alloc::collections::{binary_heap::PeekMut, BinaryHeap};
+use alloc::collections::binary_heap::BinaryHeap;
 use core::cmp::{Eq, Ord, PartialEq, PartialOrd};
 use heapless::Vec;
 use riscv::_export::critical_section;
@@ -87,61 +87,73 @@ enum PreparedTimerCallback {
 fn fire_timers_ready_by_time(time: TickInstant) -> bool {
     let mut reschedule = false;
     loop {
-        let mut callbacks_to_call: Vec<PreparedTimerCallback, 16> = Vec::new();
+        let mut ready_timers: Vec<Timer, 16> = Vec::new();
+
         {
             let mut timers = TIMERS.lock();
-            while let Some(mut event) = timers.queue.peek_mut() {
-                if event.target_time <= time {
-                    if callbacks_to_call
-                        .push(match event.callback {
-                            TargetTimerCallback::Reschedule => PreparedTimerCallback::Reschedule,
-                            TargetTimerCallback::Immediate { callback } => {
-                                PreparedTimerCallback::Immediate {
-                                    callback,
-                                    ctx: TargetTimerCallbackContext {
-                                        target_time: event.target_time,
-                                        handle_time: time,
-                                    },
-                                }
-                            }
-                            TargetTimerCallback::Soft { callback: _ } => {
-                                todo!("Implement soft timers")
-                            }
-                        })
-                        .is_err()
-                    {
-                        break;
-                    }
-                    match event.kind {
-                        TimerKind::Repeating { interval } => {
-                            event.start_or_last_fire_time = time;
-                            event.target_time = event.target_time + interval;
-                        }
-                        TimerKind::OneShot => {
-                            PeekMut::pop(event);
-                        }
-                    }
-                } else {
+            loop {
+                let is_ready = timers
+                    .queue
+                    .peek()
+                    .map(|event| event.target_time <= time)
+                    .unwrap_or(false);
+
+                if !is_ready {
+                    break;
+                }
+
+                let event = timers.queue.pop().unwrap();
+
+                if let Err(event) = ready_timers.push(event) {
+                    timers.queue.push(event);
                     break;
                 }
             }
         };
-        if callbacks_to_call.is_empty() {
+
+        if ready_timers.is_empty() {
             break;
         }
-        for prepared_callback in callbacks_to_call {
-            match prepared_callback {
-                PreparedTimerCallback::Reschedule => {
+
+        let mut timers_to_reinsert: Vec<Timer, 16> = Vec::new();
+
+        for mut event in ready_timers {
+            match &mut event.callback {
+                TargetTimerCallback::Reschedule => {
                     reschedule = true;
                 }
-                PreparedTimerCallback::Immediate { callback, ctx } => {
+                TargetTimerCallback::Immediate { callback } => {
+                    let ctx = TargetTimerCallbackContext {
+                        target_time: event.target_time,
+                        handle_time: time,
+                    };
                     (callback)(ctx);
                 }
+                TargetTimerCallback::Soft { .. } => {
+                    todo!("Implement soft timers")
+                }
+            }
+
+            match event.kind {
+                TimerKind::Repeating { interval } => {
+                    event.start_or_last_fire_time = time;
+                    event.target_time = event.target_time + interval;
+                    let _ = timers_to_reinsert.push(event);
+                }
+                TimerKind::OneShot => {}
+            }
+        }
+
+        if !timers_to_reinsert.is_empty() {
+            let mut timers = TIMERS.lock();
+            for event in timers_to_reinsert {
+                timers.queue.push(event);
             }
         }
     }
+
     TIMERS.lock().set_timer_from_queue();
-    return reschedule;
+    reschedule
 }
 
 pub fn fire_ready_timers() -> bool {

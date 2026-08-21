@@ -6,6 +6,7 @@ use crate::{
     },
     vm::{MappingFlags, MappingPermissions},
 };
+use alloc::boxed::Box;
 
 pub trait TargetPlatform {
     fn init();
@@ -110,9 +111,8 @@ pub struct TargetTimerCallbackContext {
     pub target_time: PlatformInstant,
 }
 
-pub type TargetTimerImmediateCallback = fn(TargetTimerCallbackContext);
+pub type TargetTimerImmediateCallback = Box<dyn FnMut(TargetTimerCallbackContext) + Send>;
 
-#[derive(Clone)]
 pub enum TargetTimerCallback {
     Reschedule,
     // Inside interrupt
