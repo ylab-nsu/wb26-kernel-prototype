@@ -28,4 +28,12 @@ impl TimerCallback {
             callback: Box::new(callback),
         }
     }
+
+    pub fn reschedule() -> Self {
+        TimerCallback::Reschedule
+    }
+
+    pub fn soft(_: fn()) -> Self {
+        todo!("implement timer soft callbacks");
+    }
 }

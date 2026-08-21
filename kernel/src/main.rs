@@ -24,10 +24,10 @@ use crate::arch::{traits::TargetPlatform, Platform, TimerQueue};
 use crate::boot::BootContext;
 use crate::threading::init::setup_threads;
 use core::time::Duration;
-use timers::{TimerCallback};
+use timers::TimerCallback;
 
 fn setup_reschedule_timer() {
-    TimerQueue::add_repeating_timer(Duration::from_secs(1).into(), TimerCallback::Reschedule);
+    TimerQueue::add_repeating_timer(Duration::from_secs(1).into(), TimerCallback::reschedule());
 }
 
 pub fn kernel_main(_ctx: BootContext) -> ! {
