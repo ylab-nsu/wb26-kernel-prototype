@@ -14,18 +14,27 @@ pub mod drivers;
 pub mod sync;
 mod syscall;
 pub mod threading;
+pub mod timers;
 pub mod vm;
 
 use core::panic::PanicInfo;
 
-use crate::arch::{traits::TargetPlatform, Platform};
+use crate::arch::traits::TargetTimerQueue;
+use crate::arch::{traits::TargetPlatform, Platform, TimerQueue};
 use crate::boot::BootContext;
 use crate::threading::init::setup_threads;
+use core::time::Duration;
+use timers::TimerCallback;
+
+fn setup_reschedule_timer() {
+    TimerQueue::add_repeating_timer(Duration::from_secs(1).into(), TimerCallback::reschedule());
+}
 
 pub fn kernel_main(_ctx: BootContext) -> ! {
     info!("Starting kernel (kernel_main())");
 
     setup_threads();
+    setup_reschedule_timer();
     unsafe {
         Platform::ei();
     }

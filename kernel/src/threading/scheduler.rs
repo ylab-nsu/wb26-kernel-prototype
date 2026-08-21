@@ -24,8 +24,9 @@ static mut LAST_USER: usize = unsafe { THREADS_INDEXES.user_start - 1 };
 
 #[export_name = "_reschedule_rust"]
 pub fn reschedule() {
-    let time = riscv::register::time::read64();
-    sbi::timer::set_timer(time + 10_000_000).expect("Can't set timer");
+    // let time = riscv::register::time::read64();
+    // sbi::timer::set_timer(time + 10_000_000).expect("Can't set timer");
+    info!("Reschedule");
     // sbi::timer::set_timer(time + 1_000).expect("Can't set timer");
 
     let next_thread = unsafe {
