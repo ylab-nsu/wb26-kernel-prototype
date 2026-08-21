@@ -1,8 +1,7 @@
 use crate::arch::riscv::time::{TickDuration, TickInstant};
-use crate::arch::traits::{
-    TargetInstant, TargetTimerCallback, TargetTimerCallbackContext, TargetTimerQueue,
-};
+use crate::arch::traits::{TargetInstant, TargetTimerQueue};
 use crate::sync::Mutex;
+use crate::timers::{TimerCallback, TimerCallbackContext};
 use alloc::collections::binary_heap::BinaryHeap;
 use core::cmp::{Eq, Ord, PartialEq, PartialOrd};
 use heapless::Vec;
@@ -44,7 +43,7 @@ enum TimerKind {
 }
 
 struct Timer {
-    callback: TargetTimerCallback,
+    callback: TimerCallback,
     target_time: TickInstant,
     start_or_last_fire_time: TickInstant,
     kind: TimerKind,
@@ -110,17 +109,17 @@ fn fire_timers_ready_by_time(time: TickInstant) -> bool {
 
         for mut event in ready_timers {
             match &mut event.callback {
-                TargetTimerCallback::Reschedule => {
+                TimerCallback::Reschedule => {
                     reschedule = true;
                 }
-                TargetTimerCallback::Immediate { callback } => {
-                    let ctx = TargetTimerCallbackContext {
+                TimerCallback::Immediate { callback } => {
+                    let ctx = TimerCallbackContext {
                         target_time: event.target_time,
                         handle_time: time,
                     };
                     (callback)(ctx);
                 }
-                TargetTimerCallback::Soft { .. } => {
+                TimerCallback::Soft { .. } => {
                     todo!("Implement soft timers")
                 }
             }
@@ -154,7 +153,7 @@ pub fn fire_ready_timers() -> bool {
 fn add_timer(
     start_time: TickInstant,
     target_time: TickInstant,
-    callback: TargetTimerCallback,
+    callback: TimerCallback,
     interval: Option<TickDuration>,
 ) {
     critical_section::with(|_| {
@@ -182,11 +181,11 @@ fn add_timer(
 pub struct TimerQueue;
 
 impl TargetTimerQueue for TimerQueue {
-    fn add_oneshot_timer(delta: TickDuration, callback: TargetTimerCallback) {
+    fn add_oneshot_timer(delta: TickDuration, callback: TimerCallback) {
         let start_time = TickInstant::now();
         add_timer(start_time, start_time + delta, callback, None);
     }
-    fn add_repeating_timer(interval: TickDuration, callback: TargetTimerCallback) {
+    fn add_repeating_timer(interval: TickDuration, callback: TimerCallback) {
         let start_time = TickInstant::now();
         add_timer(
             TickInstant::now(),

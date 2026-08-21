@@ -1,12 +1,9 @@
 use crate::{
     allocator::AllocatorError,
-    arch::{
-        Mapping, PhysicalAddress, PhysicalAllocation, PlatformDuration, PlatformInstant,
-        VirtualAddress,
-    },
+    arch::{Mapping, PhysicalAddress, PhysicalAllocation, PlatformDuration, VirtualAddress},
+    timers::TimerCallback,
     vm::{MappingFlags, MappingPermissions},
 };
-use alloc::boxed::Box;
 
 pub trait TargetPlatform {
     fn init();
@@ -106,36 +103,7 @@ pub trait TargetInstant: Copy {
     fn now() -> Self;
 }
 
-pub struct TargetTimerCallbackContext {
-    pub handle_time: PlatformInstant,
-    pub target_time: PlatformInstant,
-}
-
-pub trait TargetTimerCallbackFunction: FnMut(TargetTimerCallbackContext) + Send {}
-impl<T: FnMut(TargetTimerCallbackContext) + Send> TargetTimerCallbackFunction for T {}
-pub type TargetTimerCallbackFunctionBoxed = Box<dyn TargetTimerCallbackFunction>;
-
-pub enum TargetTimerCallback {
-    Reschedule,
-    // Inside interrupt
-    Immediate {
-        callback: TargetTimerCallbackFunctionBoxed,
-    },
-    // TODO: Elsewhere
-    Soft {
-        callback: fn(),
-    },
-}
-
-impl TargetTimerCallback {
-    pub fn immediate<T: TargetTimerCallbackFunction + 'static>(callback: T) -> Self {
-        TargetTimerCallback::Immediate {
-            callback: Box::new(callback),
-        }
-    }
-}
-
 pub trait TargetTimerQueue {
-    fn add_oneshot_timer(delta: PlatformDuration, callback: TargetTimerCallback);
-    fn add_repeating_timer(interval: PlatformDuration, callback: TargetTimerCallback);
+    fn add_oneshot_timer(delta: PlatformDuration, callback: TimerCallback);
+    fn add_repeating_timer(interval: PlatformDuration, callback: TimerCallback);
 }
