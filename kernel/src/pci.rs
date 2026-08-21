@@ -24,6 +24,10 @@ const PCI_BUS: u8 = 0;
 const PCI_DEVICES_PER_BUS: u8 = 32;
 const PCI_FUNCTIONS_PER_DEVICE: u8 = 8;
 
+//PCI MMIO window of the QEMU RISC-V virt machine
+const PCI_MMIO_START: usize = 0x4000_0000;
+const PCI_MMIO_END: usize = 0x8000_0000;
+
 #[derive(Clone, Copy, Debug)]
 struct PciAddress {
     bus: u8,
@@ -45,6 +49,7 @@ struct PciDevice {
 #[derive(Clone, Copy, Debug)]
 struct MemoryBar {
     size: usize,
+    flags: u32,
 }
 
 /// Reads the main fields from PCI Configuration Space
@@ -180,11 +185,130 @@ fn probe_bar0(device: &PciDevice) -> Option<MemoryBar> {
     info!("SDHCI BAR0 mask: {mask:#010x}");
     info!("SDHCI BAR0 size: {size:#x}");
 
-    Some(MemoryBar { size })
+    Some(MemoryBar { 
+        size,
+        flags: original & !PCI_BAR_ADDRESS_MASK} )
 }
+
+fn allocate_mmio(
+    next_mmio_address: &mut usize,
+    size: usize,
+) -> Option<usize> {
+    let address = align_up(*next_mmio_address, size)?;
+    let end = address.checked_add(size)?;
+
+    if end > PCI_MMIO_END {
+        return None;
+    }
+
+    *next_mmio_address = end;
+
+    Some(address)
+}
+
+fn align_up(
+    address: usize,
+    alignment: usize,
+) -> Option<usize> {
+    if alignment == 0 || !alignment.is_power_of_two() {
+        return None;
+    }
+
+    address
+        .checked_add(alignment - 1)
+        .map(|value| value & !(alignment - 1))
+}
+
+fn configure_bar0(
+    device: &PciDevice,
+    next_mmio_address: &mut usize,
+) -> Option<usize> {
+    let bar = probe_bar0(device)?;
+
+    let bar_address = allocate_mmio(
+        next_mmio_address,
+        bar.size,
+    )?;
+
+    if bar_address > u32::MAX as usize {
+        error!(
+            "BAR0 address does not fit into a 32-bit BAR"
+        );
+        return None;
+    }
+
+    let address = device.address;
+
+    let bar_value = (bar_address as u32) | bar.flags;
+
+    PciBus::pci_write32(
+        address.bus,
+        address.device,
+        address.function,
+        PCI_BAR0_REG,
+        bar_value,
+    );
+
+    let actual_bar = PciBus::pci_read32(
+        address.bus,
+        address.device,
+        address.function,
+        PCI_BAR0_REG,
+    );
+
+    let actual_address =
+        (actual_bar & PCI_BAR_ADDRESS_MASK) as usize;
+
+    if actual_address != bar_address {
+        error!(
+            "BAR0 verification failed: \
+             requested={bar_address:#x}, \
+             actual={actual_address:#x}"
+        );
+
+        return None;
+    }
+
+    let mut command = PciBus::pci_read16(
+        address.bus,
+        address.device,
+        address.function,
+        PCI_COMMAND_REG,
+    );
+
+    command |= PCI_COMMAND_MEMORY_SPACE;
+
+    PciBus::pci_write16(
+        address.bus,
+        address.device,
+        address.function,
+        PCI_COMMAND_REG,
+        command,
+    );
+
+    let actual_command = PciBus::pci_read16(
+        address.bus,
+        address.device,
+        address.function,
+        PCI_COMMAND_REG,
+    );
+
+    if actual_command & PCI_COMMAND_MEMORY_SPACE == 0 {
+        error!("Failed to enable PCI Memory Space");
+        return None;
+    }
+
+    info!("SDHCI BAR0 assigned: {actual_address:#x}");
+    info!("PCI Command: {actual_command:#06x}");
+    info!("PCI Memory Space enabled");
+
+    Some(actual_address)
+}    
 
 pub extern "C" fn driver_task() -> ! {
     info!("Scanning PCI bus {PCI_BUS}...");
+
+    let mut next_mmio_address = PCI_MMIO_START;
 
     for device_number in 0..PCI_DEVICES_PER_BUS {
         for function_number in 0..PCI_FUNCTIONS_PER_DEVICE {
@@ -220,15 +344,20 @@ pub extern "C" fn driver_task() -> ! {
 
             info!(
                 "Found SDHCI at {:02x}:{:02x}.{}",
-                device.address.bus, device.address.device, device.address.function,
+                device.address.bus,
+                device.address.device,
+                device.address.function,
             );
 
-            let Some(bar) = probe_bar0(&device) else {
-                error!("Could not probe SDHCI BAR0");
+            let Some(mmio_base) = configure_bar0(
+                &device,
+                &mut next_mmio_address,
+            ) else {
+                error!("Could not configure SDHCI BAR0");
                 continue;
             };
 
-            info!("SDHCI BAR0 requires {:#x} bytes", bar.size);
+            info!("Configured SDHCI MMIO base: {mmio_base:#x}");
         }
     }
 
