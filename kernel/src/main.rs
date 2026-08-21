@@ -25,7 +25,6 @@ use crate::arch::{
 };
 use crate::boot::BootContext;
 use crate::threading::init::setup_threads;
-use alloc::boxed::Box;
 use core::time::Duration;
 use sync::Mutex;
 
@@ -33,14 +32,14 @@ fn setup_timers() {
     // simple repeating timer
     TimerQueue::add_repeating_timer(
         Duration::from_secs(1).into(),
-        TargetTimerCallback::immediate(Box::new(|_| {
+        TargetTimerCallback::immediate(|_| {
             info!("----------------- 1 Second timer -----------------")
-        })),
+        }),
     );
     // repeating timer with state
     TimerQueue::add_repeating_timer(
         Duration::from_secs(3).into(),
-        TargetTimerCallback::immediate(Box::new(|_| {
+        TargetTimerCallback::immediate(|_| {
             static COUNT: Mutex<u32> = Mutex::new(0);
             let mut count = COUNT.lock();
             *count += 1;
@@ -48,14 +47,12 @@ fn setup_timers() {
                 "----------------- 3 Second stateful timer {} -----------------",
                 count
             )
-        })),
+        }),
     );
     // one shot timer
     TimerQueue::add_oneshot_timer(
         Duration::from_secs(10).into(),
-        TargetTimerCallback::immediate(Box::new(|_| {
-            info!("-------------------------- 10 Second timer")
-        })),
+        TargetTimerCallback::immediate(|_| info!("-------------------------- 10 Second timer")),
     );
     // Reschedule timer
     TimerQueue::add_repeating_timer(
@@ -67,22 +64,22 @@ fn setup_timers() {
         info!("-------------------------- One shot repeating timer");
         TimerQueue::add_oneshot_timer(
             Duration::from_secs(2).into(),
-            TargetTimerCallback::immediate(Box::new(oneshot_repeating_callback)),
+            TargetTimerCallback::immediate(oneshot_repeating_callback),
         );
     }
     TimerQueue::add_oneshot_timer(
         Duration::from_secs(2).into(),
-        TargetTimerCallback::immediate(Box::new(oneshot_repeating_callback)),
+        TargetTimerCallback::immediate(oneshot_repeating_callback),
     );
     let outer_state = 5;
     TimerQueue::add_oneshot_timer(
         Duration::from_secs(4).into(),
-        TargetTimerCallback::immediate(Box::new(move |_| {
+        TargetTimerCallback::immediate(move |_| {
             info!(
                 "-------------------------- One shot timer with state {}",
                 outer_state
             );
-        })),
+        }),
     );
 }
 

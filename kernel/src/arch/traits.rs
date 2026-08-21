@@ -111,13 +111,15 @@ pub struct TargetTimerCallbackContext {
     pub target_time: PlatformInstant,
 }
 
-pub type TargetTimerImmediateCallback = Box<dyn FnMut(TargetTimerCallbackContext) + Send>;
+pub trait TargetTimerCallbackFunction: FnMut(TargetTimerCallbackContext) + Send {}
+impl<T: FnMut(TargetTimerCallbackContext) + Send> TargetTimerCallbackFunction for T {}
+pub type TargetTimerCallbackFunctionBoxed = Box<dyn TargetTimerCallbackFunction>;
 
 pub enum TargetTimerCallback {
     Reschedule,
     // Inside interrupt
     Immediate {
-        callback: TargetTimerImmediateCallback,
+        callback: TargetTimerCallbackFunctionBoxed,
     },
     // TODO: Elsewhere
     Soft {
@@ -126,8 +128,10 @@ pub enum TargetTimerCallback {
 }
 
 impl TargetTimerCallback {
-    pub fn immediate(callback: TargetTimerImmediateCallback) -> Self {
-        TargetTimerCallback::Immediate { callback }
+    pub fn immediate<T: TargetTimerCallbackFunction + 'static>(callback: T) -> Self {
+        TargetTimerCallback::Immediate {
+            callback: Box::new(callback),
+        }
     }
 }
 

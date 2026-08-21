@@ -1,7 +1,6 @@
 use crate::arch::riscv::time::{TickDuration, TickInstant};
 use crate::arch::traits::{
-    TargetInstant, TargetTimerCallback, TargetTimerCallbackContext, TargetTimerImmediateCallback,
-    TargetTimerQueue,
+    TargetInstant, TargetTimerCallback, TargetTimerCallbackContext, TargetTimerQueue,
 };
 use crate::sync::Mutex;
 use alloc::collections::binary_heap::BinaryHeap;
@@ -75,14 +74,6 @@ impl PartialEq for Timer {
 }
 
 impl Eq for Timer {}
-
-enum PreparedTimerCallback {
-    Reschedule,
-    Immediate {
-        callback: TargetTimerImmediateCallback,
-        ctx: TargetTimerCallbackContext,
-    },
-}
 
 fn fire_timers_ready_by_time(time: TickInstant) -> bool {
     let mut reschedule = false;
