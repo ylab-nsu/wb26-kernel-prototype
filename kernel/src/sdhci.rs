@@ -4,8 +4,6 @@ use crate::pci::{ pci_enable_device, PCI_BAR0_REG };
 use crate::arch::traits::TargetPciBus;
 use crate::arch::PciBus;
 
-pub static mut sdhci_pci_addr: Option<(u8, u8, u8)> = None;
-
 #[bitfield(u16)]
 struct BlockSize {
     #[bits(12)]
@@ -481,82 +479,90 @@ struct SlotRegisters {
     slot_interrupt_status: SlotInterruptStatus,
 }
 
-// Slots amount is limited by PCI BARs amount, there are six of them
-struct Sdhci {
-    slots: [Option<*mut SlotRegisters>; 6],
+struct Slot {
+    regs: *mut SlotRegisters,
 }
 
-impl Sdhci {
-    fn is_card_presented(&self, slot: u8) -> Result<bool, &'static str> {
-        if let Some(slot_regs) = self.slots[slot as usize] {
-            unsafe {
-                let present_state = &raw mut ((*slot_regs).present_state);
-                let present_state = read_volatile(present_state);
+// Slots amount is limited by PCI BARs amount, there are six of them
+struct Sdhci {
+    pci_bus: u8,
+    pci_dev: u8,
+    pci_func: u8,
+    slots: [Option<Slot>; 6],
+}
 
-                Ok(present_state.card_inserted())
-            }
-        }
-        else {
-            Err("There is no such slot")
+impl Slot {
+    fn new(regs: *mut SlotRegisters) -> Self {
+        Slot { regs }
+    }
+
+    fn init(&self) -> Result<(), &'static str> {
+        self.soft_reset()?;
+
+        // TODO: Set frequency divisor
+        // TODO: Set timeout_control
+
+        Ok(())
+    }
+
+    fn is_card_presented(&self) -> bool {
+        unsafe {
+            let present_state = &raw mut (*self.regs).present_state;
+            let present_state = read_volatile(present_state);
+
+            present_state.card_inserted()
         }
     }
 
-    fn soft_reset(&self, slot: u8) -> Result<(), &'static str> {
-        if let Some(slot_regs) = self.slots[slot as usize] {
-            unsafe {
-                let soft_reset_reg = &raw mut ((*slot_regs).soft_reset_control);
-                let soft_reset_reg_state = read_volatile(soft_reset_reg);
-                write_volatile(soft_reset_reg, soft_reset_reg_state.with_for_all(true));
+    fn soft_reset(&self) -> Result<(), &'static str> {
+        unsafe {
+            let soft_reset_reg = &raw mut (*self.regs).soft_reset_control;
+            let soft_reset_reg_state = read_volatile(soft_reset_reg);
+            write_volatile(soft_reset_reg, soft_reset_reg_state.with_for_all(true));
 
-                // TODO: Setup interrupt or something
-                // Wait for the controller to clear the reset bit
-                for _ in 0..1000 {
-                    if !read_volatile(soft_reset_reg).for_all() {
-                        break;
-                    }
+            // TODO: Setup timer for timing out
+            // Wait for the controller to clear the reset bit
+            let mut reset = false;
+            for _ in 0..1000 {
+                if !read_volatile(soft_reset_reg).for_all() {
+                    reset = true;
+                    break;
                 }
-
-                Ok(())
             }
-        }
-        else {
-            Err("There is no such slot")
+
+            match reset {
+                true => Ok(()),
+                false => Err("Reset timeout"),
+            }
         }
     }
 
-    fn dump_capabilities(&self, slot: u8) -> Result<(), &'static str> {
-        if let Some(slot_regs) = self.slots[slot as usize] {
-            unsafe {
-                let caps = &raw mut ((*slot_regs).capabilities);
-                let caps = read_volatile(caps);
+    fn dump_capabilities(&self) {
+        unsafe {
+            let caps = &raw mut (*self.regs).capabilities;
+            let caps = read_volatile(caps);
 
-                info!("Timeout clock freq: {}{}", 
-                    caps.timeout_clock_freq(),
-                    match caps.timeout_clock_unit() {
-                        TimeoutClockUnit::KHz => "KHz",
-                        TimeoutClockUnit::MHz => "MHz",
-                    });
-                info!("Base clock freq: {}MHz", caps.base_clock_freq());
-                info!("Max block length: {}",
-                    match caps.max_block_length() {
-                        MaxBlockLength::B512 => "512B",
-                        MaxBlockLength::B1024 => "1024B",
-                        MaxBlockLength::B2048 => "2048B",
-                    });
-                info!("ADMA2 support: {}", caps.adma2_support());
-                info!("High speed support: {}", caps.high_speed_support());
-                info!("SDMA support: {}", caps.sdma_support());
-                info!("Suspend resume support: {}", caps.suspend_resume_support());
-                info!("3.3V support: {}", caps.voltage_3_3_support());
-                info!("3.0V support: {}", caps.voltage_3_0_support());
-                info!("1.8V support: {}", caps.voltage_1_8_support());
-                info!("64 bit systm bus support: {}", caps.system_bus_64());
-                
-                Ok(())
-            }
-        }
-        else {
-            Err("There is no such slot")
+            info!("Timeout clock freq: {}{}", 
+                caps.timeout_clock_freq(),
+                match caps.timeout_clock_unit() {
+                    TimeoutClockUnit::KHz => "KHz",
+                    TimeoutClockUnit::MHz => "MHz",
+                });
+            info!("Base clock freq: {}MHz", caps.base_clock_freq());
+            info!("Max block length: {}",
+                match caps.max_block_length() {
+                    MaxBlockLength::B512 => "512B",
+                    MaxBlockLength::B1024 => "1024B",
+                    MaxBlockLength::B2048 => "2048B",
+                });
+            info!("ADMA2 support: {}", caps.adma2_support());
+            info!("High speed support: {}", caps.high_speed_support());
+            info!("SDMA support: {}", caps.sdma_support());
+            info!("Suspend resume support: {}", caps.suspend_resume_support());
+            info!("3.3V support: {}", caps.voltage_3_3_support());
+            info!("3.0V support: {}", caps.voltage_3_0_support());
+            info!("1.8V support: {}", caps.voltage_1_8_support());
+            info!("64 bit systm bus support: {}", caps.system_bus_64());
         }
     }
 
@@ -579,40 +585,53 @@ impl Sdhci {
     */
 }
 
+impl Sdhci {
+    fn new(bus: u8, dev: u8, func: u8) -> Self {
+        // TODO: Check all BARs, not just first
+        let sdhci_base = PciBus::pci_read32(bus, dev, func, PCI_BAR0_REG) & !(0x0F as u32);
+
+        Sdhci { 
+            pci_bus: bus,
+            pci_dev: dev,
+            pci_func: func,
+            slots: [Some(Slot::new(sdhci_base as *mut SlotRegisters)), None, None, None, None, None] 
+        }
+    }
+
+    fn init(&self) {
+        pci_enable_device(self.pci_bus, self.pci_dev, self.pci_func);
+
+        // Init all slots
+        for (i, slot) in self.slots.iter().enumerate() {
+            if let Some(slot) = slot {
+                match slot.init() {
+                    Ok(_) => {},
+                    Err(err) => {
+                        error!("SDHCI: Slot {} fault: {}", i, err);
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub extern "C" fn driver_task() -> ! {
 
     unsafe {
-        if let Some((bus, dev, func)) = sdhci_pci_addr {
-            debug!("Size of reg set: {}", core::mem::size_of::<SlotRegisters>());
+        // TODO: Get this structure from bus-driver using some id of device, to which driver is attached
+        let pci_info = &crate::pci::pci_devices[0];
 
-            pci_enable_device(bus, dev, func);
+        let host = Sdhci::new(pci_info.bus, pci_info.dev, pci_info.func);
+        host.init();
 
-            // TODO: Check all BARs, not just first
-            let sdhci_base = PciBus::pci_read32(bus, dev, func, PCI_BAR0_REG) & !(0x0F as u32);
-            let sdhci_data = Sdhci { slots: [Some(sdhci_base as *mut SlotRegisters), None, None, None, None, None] };
+        match &host.slots[0] {
+            Some(slot) => {
+                info!("Card Inserted: {}", slot.is_card_presented());
+                slot.dump_capabilities();
 
-            // Soft reset sdhci as 
-            if let Err(err) = sdhci_data.soft_reset(0) {
-                error!("SDHCI Driver fault: {}", err);
-            }
-
-            match sdhci_data.is_card_presented(0) {
-                Ok(card_inserted) => info!("Card Inserted: {}", card_inserted),
-                Err(err) => error!("SDHCI Driver fault: {}", err),
-            }
-
-            if let Err(err) = sdhci_data.dump_capabilities(0) {
-                error!("SDHCI Driver fault: {}", err);
-            }
-
-            // TODO: Set frequency divisor
-            // TODO: Set timeout_control
-
-            // TODO: Enable slot (enable clock, power, ...)
-
-        }
-        else {
-            error!("No sdhci address on pci bus on sdhci bus driver start");
+                // TODO: Enable slot (enable clock, power, ...)
+            },
+            None => error!("There is no 0th slot in sdhci"),
         }
     }
 

@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use crate::arch::traits::TargetPciBus;
 use crate::arch::PciBus;
 use core::ptr::{read_volatile, write_volatile};
@@ -26,6 +27,15 @@ pub const SDHCI_SUBCLASS: u8 = 0x05;
 pub const PCI_BUS: u8 = 0;
 pub const PCI_DEVICES_PER_BUS: u8 = 32;
 pub const PCI_FUNCTIONS_PER_DEVICE: u8 = 8;
+
+// Bus-specific data about device attached to it
+pub struct PciDeviceInfo {
+    pub bus: u8,
+    pub dev: u8,
+    pub func: u8,
+}
+
+pub static mut pci_devices: Vec<PciDeviceInfo> = Vec::new();
 
 pub fn pci_disable_device(bus: u8, dev: u8, func: u8) {
     let command = PciBus::pci_read16(bus, dev, func, PCI_COMMAND_REG);
@@ -83,7 +93,12 @@ pub fn map_all_bars(bus: u8, dev: u8, func: u8) -> Result<(), ()> {
 }
 
 pub fn register_pci_device(bus: u8, dev: u8, func: u8) {
-    // TODO: Change to proper device registration after drivers subsystem implementation
+    unsafe {
+        pci_devices.push(PciDeviceInfo { bus, dev, func });
+    }
+
+    // TODO: Check device type by vendor id + device id + class and register device in kernel device
+    // subsystem
 }
 
 pub fn spawn_driver(bus: u8, dev: u8, func: u8) {
@@ -94,7 +109,6 @@ pub fn spawn_driver(bus: u8, dev: u8, func: u8) {
 
         // TODO: Actually run driver instead of "becoming" it
         unsafe {
-            crate::sdhci::sdhci_pci_addr = Some((bus, dev, func));
             crate::sdhci::driver_task();
         }
     }
