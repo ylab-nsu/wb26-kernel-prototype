@@ -11,11 +11,11 @@ impl RiscvPciBus {
     // Compute memory-mapped PCI config address (Bus 0, Device 0..31, Function 0..7)
     #[inline]
     fn pci_ecam_addr(bus: u8, dev: u8, func: u8, off: u16) -> usize {
-        (ECAM_BASE
+        ECAM_BASE
             | ((bus as usize) << 20)
             | ((dev as usize) << 15)
             | ((func as usize) << 12)
-            | (off & 0xFFF) as usize)
+            | (off & 0xFFF) as usize
     }
 }
 

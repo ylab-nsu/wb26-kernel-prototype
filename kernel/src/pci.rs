@@ -1,7 +1,6 @@
 use alloc::vec::Vec;
 use crate::arch::traits::TargetPciBus;
 use crate::arch::PciBus;
-use core::ptr::{read_volatile, write_volatile};
 
 // Standard PCI Configuration Space offsets
 pub const PCI_VENDOR_DEVICE_REG: u16 = 0x00;
@@ -35,7 +34,7 @@ pub struct PciDeviceInfo {
     pub func: u8,
 }
 
-pub static mut pci_devices: Vec<PciDeviceInfo> = Vec::new();
+pub static mut PCI_DEVICES: Vec<PciDeviceInfo> = Vec::new();
 
 pub fn pci_disable_device(bus: u8, dev: u8, func: u8) {
     let command = PciBus::pci_read16(bus, dev, func, PCI_COMMAND_REG);
@@ -94,7 +93,7 @@ pub fn map_all_bars(bus: u8, dev: u8, func: u8) -> Result<(), ()> {
 
 pub fn register_pci_device(bus: u8, dev: u8, func: u8) {
     unsafe {
-        pci_devices.push(PciDeviceInfo { bus, dev, func });
+        PCI_DEVICES.push(PciDeviceInfo { bus, dev, func });
     }
 
     // TODO: Check device type by vendor id + device id + class and register device in kernel device
@@ -108,9 +107,7 @@ pub fn spawn_driver(bus: u8, dev: u8, func: u8) {
         info!("Found SDHCI");
 
         // TODO: Actually run driver instead of "becoming" it
-        unsafe {
-            crate::sdhci::driver_task();
-        }
+        crate::sdhci::driver_task();
     }
 }
 

@@ -19,8 +19,8 @@ struct BlockSize {
 #[bitenum(all = false)]
 enum TransferingDirection {
     #[fallback]
-    WRITE = 0,
-    READ = 1,
+    Write = 0,
+    Read = 1,
 }
 
 #[bitfield(u16)]
@@ -42,10 +42,10 @@ struct TransferMode {
 #[bitenum(all = false)]
 enum ResponseType {
     #[fallback]
-    NO_RESPONSE = 0,
-    RESPONSE_LEN_136 = 1,
-    RESPONSE_LEN_48 = 2,
-    RESPONSE_LEN_48_CBAR = 3, // Response lenght 48 check Busy after response
+    NoResponse = 0,
+    ResponseLen136 = 1,
+    ResponseLen48 = 2,
+    ResponseLen48CheckBusy = 3, // Response lenght 48 check Busy after response
 }
 
 #[derive(Debug)]
@@ -53,10 +53,10 @@ enum ResponseType {
 #[bitenum(all = false)]
 enum CommandType {
     #[fallback]
-    NORMAL = 0,
-    SUSPEND = 1,
-    RESUME = 2,
-    ABORT = 3,
+    Normal = 0,
+    Suspend = 1,
+    Resume = 2,
+    Abort = 3,
 }
 
 #[bitfield(u16)]
@@ -107,8 +107,8 @@ struct PresentState {
 #[bitenum(all = false)]
 enum TransferWidth {
     #[fallback]
-    ONE_BIT = 0,
-    FOUR_BIT = 1,
+    OneBit = 0,
+    FourBit = 1,
 }
 
 #[derive(Debug)]
@@ -126,8 +126,8 @@ enum DmaMode {
 #[bitenum(all = false)]
 enum CardDetection {
     #[fallback]
-    NORMAL = 0,
-    TEST = 1,
+    Nornal = 0,
+    Test = 1,
 }
 
 #[bitfield(u8)]
@@ -370,9 +370,9 @@ struct Capabilities {
 // NOTE: Actual max current is (max_currenr_n_mV * 4)mA
 #[bitfield(u64)]
 struct MaximumCurrentCapabilities {
-    max_current_3_3V: u8,
-    max_current_3_0V: u8,
-    max_current_1_8V: u8,
+    max_current_3_3_v: u8,
+    max_current_3_0_v: u8,
+    max_current_1_8_v: u8,
     #[bits(40)]
     __: usize,
 }
@@ -426,9 +426,9 @@ struct ForceEventForCmd12Error {
 #[bitenum(all = false)]
 enum AdmaErrorState {
     #[fallback]
-    ST_STOP = 0,
-    ST_FDS = 1,
-    ST_TFR = 3,
+    StStop = 0,
+    StFds = 1,
+    StTfr = 3,
 }
 
 #[bitfield(u8)]
@@ -619,7 +619,7 @@ pub extern "C" fn driver_task() -> ! {
 
     unsafe {
         // TODO: Get this structure from bus-driver using some id of device, to which driver is attached
-        let pci_info = &crate::pci::pci_devices[0];
+        let pci_info = &crate::pci::PCI_DEVICES[0];
 
         let host = Sdhci::new(pci_info.bus, pci_info.dev, pci_info.func);
         host.init();
