@@ -1,3 +1,5 @@
+mod cards;
+
 use bitfield_struct::{ bitfield, bitenum };
 use core::ptr::{read_volatile, write_volatile};
 use crate::pci::{ pci_enable_device, PCI_BAR0_REG };
@@ -448,7 +450,7 @@ struct SlotRegisters {
     argument: u32,
     transfer_mode: TransferMode,
     command: Command,
-    response: u128,
+    response: [u32; 4],
     buffer_data_port: u32,
     present_state: PresentState,
     host_control: HostControl,
@@ -468,18 +470,19 @@ struct SlotRegisters {
     __1: u16,
     capabilities: Capabilities,
     maximum_current_capabilities: MaximumCurrentCapabilities,
-    force_event_for_error_interrupt: ForceEventForErrorInterrupt,
     force_event_for_cmd12_error: ForceEventForCmd12Error,
+    force_event_for_error_interrupt: ForceEventForErrorInterrupt,
     adma_error_status: AdmaErrorStatus,
     __2: u8,
     __3: u16,
     adma_address: u64,
     __4: [u32; 39],
-    host_controller_version: HostControllerVersion,
     slot_interrupt_status: SlotInterruptStatus,
+    host_controller_version: HostControllerVersion,
 }
 
 // Bus-specific data about device attached to it
+#[derive(Copy, Clone)]
 struct Slot {
     slot_num: u8,
     regs: *mut SlotRegisters,
@@ -491,6 +494,11 @@ struct Sdhci {
     pci_dev: u8,
     pci_func: u8,
     slots: [Option<Slot>; 6],
+}
+
+enum CommandError {
+    IssuanceTimeout,
+    InterruptedError(ErrorInterruptStatus),
 }
 
 impl Slot {
@@ -523,7 +531,10 @@ impl Slot {
         self.power_up(Voltage::V3_3)?;
         self.set_sdclock_frequency(400)?;
 
-        // TODO: Probe for card type
+        // TODO: Probe for card type instead of treating it as a emmc unconditionally
+        // TODO: Register attached card in kernel device subsystem
+        // TODO: Replace with driver matching after drivers subsystem implementation
+        cards::emmc::driver_task();
 
         Ok(())
     }
@@ -669,23 +680,159 @@ impl Slot {
         }
     }
 
-    /*
-    fn set_normal_speed_frequency(&self, slot: u8) -> Result<(), &'static str> {
-        if let Some(slot_regs) = self.slots[slot as usize] {
-            unsafe {
-                // Read base clock frequency
-                let caps = &raw mut ((*slot_regs).capabilities);
-                let base_clock_freq = read_volatile(caps).base_clock_freq(); // MHz
+    fn enable_all_interrupt_statuses(&self) {
+        unsafe {
+            let normal_interrupt_status_enable = &raw mut (*self.regs).normal_interrupt_status_enable;
+            let normal_interrupt_status_enable_val = NormalInterruptStatusEnable::new()
+                .with_command_complete(true)
+                .with_transfer_complete(true)
+                .with_block_gap_event(true)
+                .with_dma_interrupt(true)
+                .with_buffer_write_ready(true)
+                .with_buffer_read_ready(true)
+                .with_card_insertion(true)
+                .with_card_removal(true)
+                .with_card_interrupt(true);
+            write_volatile(normal_interrupt_status_enable, normal_interrupt_status_enable_val);
 
-                // For normal speed we need 25 MHz frequency
-                let divisor = (base_clock_freq / 25).next_power_of_two() as u8;
-            }
-        }
-        else {
-            Err("There is no such slot")
+            let error_interrupt_status_enable = &raw mut (*self.regs).error_interrupt_status_enable;
+            let error_interrupt_status_enable_val = ErrorInterruptStatusEnable::new()
+                .with_command_timeout(true)
+                .with_command_crc(true)
+                .with_command_end_bit(true)
+                .with_command_index(true)
+                .with_data_timeout(true)
+                .with_data_crc(true)
+                .with_data_end_bit(true)
+                .with_current_limit(true)
+                .with_auto_cmd12(true)
+                .with_adma(true);
+            write_volatile(error_interrupt_status_enable, error_interrupt_status_enable_val);
         }
     }
-    */
+
+    fn clear_all_interrupt_statuses(&self) {
+        unsafe {
+            let normal_interrupt_status = &raw mut (*self.regs).normal_interrupt_status;
+            let normal_interrupt_status_val = NormalInterruptStatus::new()
+                .with_command_complete(true)
+                .with_transfer_complete(true)
+                .with_block_gap_event(true)
+                .with_dma_interrupt(true)
+                .with_buffer_write_ready(true)
+                .with_buffer_read_ready(true)
+                .with_card_insertion(true)
+                .with_card_removal(true);
+            write_volatile(normal_interrupt_status, normal_interrupt_status_val);
+
+            let error_interrupt_status = &raw mut (*self.regs).error_interrupt_status;
+            let error_interrupt_status_val = ErrorInterruptStatus::new()
+                .with_command_timeout(true)
+                .with_command_crc(true)
+                .with_command_end_bit(true)
+                .with_command_index(true)
+                .with_data_timeout(true)
+                .with_data_crc(true)
+                .with_data_end_bit(true)
+                .with_current_limit(true)
+                .with_auto_cmd12(true)
+                .with_adma(true);
+            write_volatile(error_interrupt_status, error_interrupt_status_val);
+        }
+    }
+
+    fn issue_non_dat_command(&self, argument: u32, command: Command) -> Result<u128, CommandError> {
+        unsafe {
+            // Wait till CMD line is free
+            let present_state = &raw mut (*self.regs).present_state;
+            let mut cmd_inhibit = true;
+            for _ in 0..1000 {
+                if !read_volatile(present_state).command_inhibit_cmd() {
+                    cmd_inhibit = false;
+                    break;
+                }
+            }
+            if cmd_inhibit {
+                return Err(CommandError::IssuanceTimeout);
+            }
+
+            info!("Issuing CMD{} on slot {}", command.index(), self.slot_num);
+
+            let argument_ptr = &raw mut (*self.regs).argument;
+            let command_ptr = &raw mut (*self.regs).command;
+
+            write_volatile(argument_ptr, argument);
+            write_volatile(command_ptr, command);
+
+            match self.wait_for_command_complete() {
+                Ok(_) => Ok(self.read_response_normalized()),
+                Err(err) => Err(CommandError::InterruptedError(err)),
+            }
+        }
+    }
+
+    fn issue_cpu_data_transfer(
+        &self,
+        block_size: BlockSize,
+        block_count: u16,
+        argument: u32,
+        transfer_mode: TransferMode,
+        command: Command) {
+
+        // TODO: Wait 'till CMD and DAT Inhibit is false
+        // TODO: Issue command
+    }
+    
+    fn issue_dma_command(
+        &self,
+        sdma_address: u32,
+        block_size: BlockSize,
+        block_count: u16,
+        argument: u32,
+        transfer_mode: TransferMode,
+        command: Command
+        ) {
+        // TODO: Wait 'till CMD and DAT Inhibit is false
+        // TODO: Issue command
+    }
+
+    fn wait_for_command_complete(&self) -> Result<(), ErrorInterruptStatus> {
+        unsafe {
+            let normal_int_status = &raw mut (*self.regs).normal_interrupt_status;
+            let error_int_status = &raw mut (*self.regs).error_interrupt_status;
+
+            loop {
+                let normal_int_status_val = read_volatile(normal_int_status);
+
+                if normal_int_status_val.command_complete() {
+                    let normal_int_status_val = NormalInterruptStatus::new().with_command_complete(true);
+                    write_volatile(normal_int_status, normal_int_status_val);
+
+                    return Ok(());
+                }
+                else if normal_int_status_val.error_interrupt() {
+                    let error_int_status_val = read_volatile(error_int_status);
+                    write_volatile(error_int_status, error_int_status_val);
+
+                    return Err(error_int_status_val);
+                }
+            }
+        }
+    }
+
+    fn read_response_normalized(&self) -> u128 {
+        unsafe {
+            let mut out: u128 = 0;
+
+            for i in 0..4 {
+                let part = &raw const (*self.regs).response[i];
+                let part = read_volatile(part) as u128;
+                out |= part << (i * 32);
+            }
+
+            out
+        }
+    }
 }
 
 impl Sdhci {
@@ -721,23 +868,16 @@ impl Sdhci {
     }
 }
 
-pub extern "C" fn driver_task() -> ! {
+pub static mut host: Option<Sdhci> = None;
 
+pub extern "C" fn driver_task() -> ! {
     unsafe {
         // TODO: Get this structure from bus-driver using some id of device, to which driver is attached
         let pci_info = &crate::pci::PCI_DEVICES[0];
 
-        let mut host = Sdhci::new(pci_info.bus, pci_info.dev, pci_info.func);
-        host.init();
+        host = Some(Sdhci::new(pci_info.bus, pci_info.dev, pci_info.func));
+        host.as_mut().unwrap().init();
 
-        match &host.slots[0] {
-            Some(slot) => {
-                slot.dump_capabilities();
-
-                // TODO: Enable slot (enable clock, power, ...)
-            },
-            None => error!("There is no 0th slot in sdhci"),
-        }
     }
 
     loop { }
