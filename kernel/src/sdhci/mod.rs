@@ -479,7 +479,9 @@ struct SlotRegisters {
     slot_interrupt_status: SlotInterruptStatus,
 }
 
+// Bus-specific data about device attached to it
 struct Slot {
+    slot_num: u8,
     regs: *mut SlotRegisters,
 }
 
@@ -492,17 +494,116 @@ struct Sdhci {
 }
 
 impl Slot {
-    fn new(regs: *mut SlotRegisters) -> Self {
-        Slot { regs }
+    fn new(slot_num: u8, regs: *mut SlotRegisters) -> Self {
+        Slot { slot_num, regs }
     }
 
-    fn init(&self) -> Result<(), &'static str> {
+    fn init(&mut self) -> Result<(), &'static str> {
         self.soft_reset()?;
 
-        // TODO: Set frequency divisor
-        // TODO: Set timeout_control
+        // Set timeout to (timeout_clock_freq * 2^27)
+        unsafe {
+            let timeout_ctl = &raw mut (*self.regs).timeout_control;
+            write_volatile(timeout_ctl, 0b1110);
+        }
+
+        // If there is card on startup - attach it
+        if self.is_card_presented() {
+            self.attach_card()?;
+        }
 
         Ok(())
+    }
+
+    // Identify card and spawn a driver for it
+    fn attach_card(&mut self) -> Result<(), &'static str> {
+        info!("Attaching card to sdhci slot {}", self.slot_num);
+
+        info!("Setting slot {} to identification state", self.slot_num);
+        self.power_up(Voltage::V3_3)?;
+        self.set_sdclock_frequency(400)?;
+
+        // TODO: Probe for card type
+
+        Ok(())
+    }
+
+    fn power_up(&self, voltage: Voltage) -> Result<(), &'static str> {
+        unsafe {
+            info!("Slot {} target voltage: {}",
+                self.slot_num,
+                match voltage {
+                    Voltage::V1_8 => "1.8V",
+                    Voltage::V3_0 => "3.0V",
+                    Voltage::V3_3 => "3.3V",
+                });
+
+
+            let caps = &raw mut (*self.regs).capabilities;
+            let voltage_supported = match voltage {
+                Voltage::V1_8 => read_volatile(caps).voltage_1_8_support(),
+                Voltage::V3_0 => read_volatile(caps).voltage_3_0_support(),
+                Voltage::V3_3 => read_volatile(caps).voltage_3_3_support(),
+            };
+
+            if !voltage_supported {
+                return Err("Slot doesnt support target voltage");
+            }
+
+            let power_ctl_ptr = &raw mut (*self.regs).power_control;
+            let power_ctl = read_volatile(power_ctl_ptr);
+            write_volatile(power_ctl_ptr, power_ctl
+                .with_sd_bus_power(true)
+                .with_voltage(voltage));
+
+            Ok(())
+        }
+    }
+
+    // Enables sdclock on given frequency
+    // freq in KHz
+    fn set_sdclock_frequency(&self, freq: u32) -> Result<(), &'static str> {
+        unsafe {
+            info!("Slot {} target freq: {freq}KHz", self.slot_num);
+
+            let caps = &raw mut (*self.regs).capabilities;
+            let base_freq = read_volatile(caps).base_clock_freq();
+
+            info!("Slot {} base freq: {base_freq}MHz", self.slot_num);
+
+            // Divide by 2, because actual divisor is (divisor * 2)
+            let divisor = (base_freq as u32 * 1000 / freq / 2).next_power_of_two() as u8;
+
+            info!("Slot {} frequency divisor: {}", self.slot_num, divisor as u32 * 2);
+            
+            let clock_ctl_ptr = &raw mut (*self.regs).clock_control;
+            let mut clock_ctl = read_volatile(clock_ctl_ptr);
+
+            clock_ctl = clock_ctl.with_sd_clock_enable(false);
+            write_volatile(clock_ctl_ptr, clock_ctl);
+
+            clock_ctl = clock_ctl
+                .with_freq_divisor(divisor)
+                .with_internal_clock_enable(true);
+            write_volatile(clock_ctl_ptr, clock_ctl);
+
+            let mut stable = false;
+            for _ in 0..1000 {
+                clock_ctl = read_volatile(clock_ctl_ptr);
+                if clock_ctl.internal_clock_stable() {
+                    stable = true;
+                    break;
+                }
+            }
+
+            match stable {
+                true => {
+                    write_volatile(clock_ctl_ptr, clock_ctl.with_sd_clock_enable(true));
+                    Ok(())
+                },
+                false => Err("Clock stabilization timeout"),
+            }
+        }
     }
 
     fn is_card_presented(&self) -> bool {
@@ -542,27 +643,29 @@ impl Slot {
             let caps = &raw mut (*self.regs).capabilities;
             let caps = read_volatile(caps);
 
-            info!("Timeout clock freq: {}{}", 
+            info!("Slot {} capabilities:", self.slot_num);
+
+            info!("\tTimeout clock freq: {}{}", 
                 caps.timeout_clock_freq(),
                 match caps.timeout_clock_unit() {
                     TimeoutClockUnit::KHz => "KHz",
                     TimeoutClockUnit::MHz => "MHz",
                 });
-            info!("Base clock freq: {}MHz", caps.base_clock_freq());
-            info!("Max block length: {}",
+            info!("\tBase clock freq: {}MHz", caps.base_clock_freq());
+            info!("\tMax block length: {}",
                 match caps.max_block_length() {
                     MaxBlockLength::B512 => "512B",
                     MaxBlockLength::B1024 => "1024B",
                     MaxBlockLength::B2048 => "2048B",
                 });
-            info!("ADMA2 support: {}", caps.adma2_support());
-            info!("High speed support: {}", caps.high_speed_support());
-            info!("SDMA support: {}", caps.sdma_support());
-            info!("Suspend resume support: {}", caps.suspend_resume_support());
-            info!("3.3V support: {}", caps.voltage_3_3_support());
-            info!("3.0V support: {}", caps.voltage_3_0_support());
-            info!("1.8V support: {}", caps.voltage_1_8_support());
-            info!("64 bit systm bus support: {}", caps.system_bus_64());
+            info!("\tADMA2 support: {}", caps.adma2_support());
+            info!("\tHigh speed support: {}", caps.high_speed_support());
+            info!("\tSDMA support: {}", caps.sdma_support());
+            info!("\tSuspend resume support: {}", caps.suspend_resume_support());
+            info!("\t3.3V support: {}", caps.voltage_3_3_support());
+            info!("\t3.0V support: {}", caps.voltage_3_0_support());
+            info!("\t1.8V support: {}", caps.voltage_1_8_support());
+            info!("\t64 bit systm bus support: {}", caps.system_bus_64());
         }
     }
 
@@ -594,20 +697,23 @@ impl Sdhci {
             pci_bus: bus,
             pci_dev: dev,
             pci_func: func,
-            slots: [Some(Slot::new(sdhci_base as *mut SlotRegisters)), None, None, None, None, None] 
+            slots: [Some(Slot::new(0, sdhci_base as *mut SlotRegisters)), None, None, None, None, None] 
         }
     }
 
-    fn init(&self) {
+    fn init(&mut self) {
         pci_enable_device(self.pci_bus, self.pci_dev, self.pci_func);
 
         // Init all slots
-        for (i, slot) in self.slots.iter().enumerate() {
+        for (i, slot) in self.slots.iter_mut().enumerate() {
             if let Some(slot) = slot {
                 match slot.init() {
-                    Ok(_) => {},
+                    Ok(_) => {
+                        info!("SDHCI: Slot {} initialized successfully", i);
+                    },
                     Err(err) => {
                         error!("SDHCI: Slot {} fault: {}", i, err);
+                        // TODO: Invalidate slot
                     }
                 }
             }
@@ -621,12 +727,11 @@ pub extern "C" fn driver_task() -> ! {
         // TODO: Get this structure from bus-driver using some id of device, to which driver is attached
         let pci_info = &crate::pci::PCI_DEVICES[0];
 
-        let host = Sdhci::new(pci_info.bus, pci_info.dev, pci_info.func);
+        let mut host = Sdhci::new(pci_info.bus, pci_info.dev, pci_info.func);
         host.init();
 
         match &host.slots[0] {
             Some(slot) => {
-                info!("Card Inserted: {}", slot.is_card_presented());
                 slot.dump_capabilities();
 
                 // TODO: Enable slot (enable clock, power, ...)
