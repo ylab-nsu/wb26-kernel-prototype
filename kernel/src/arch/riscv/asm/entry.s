@@ -1,4 +1,5 @@
 .section .init, "ax"
+.option arch, +f, +d
 .global __riscv_start
 
 __riscv_start:
