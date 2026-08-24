@@ -1,7 +1,9 @@
+use core::sync::atomic::Ordering;
+
 use crate::arch::traits::TargetTrapFrame;
 use crate::syscall::handle_syscall;
 use crate::arch::riscv::plic::{plic_claim, plic_complete};
-use crate::drivers_::uart::{UART_DRIVER_QUEUE, put_into_queue, UartDriverMessage, get_interrupt_reason_from};
+use crate::drivers_::uart::{UART_DRIVER_QUEUE, UartDriverMessage, get_interrupt_reason_from, put_into_queue};
 
 use riscv::interrupt::Interrupt::SupervisorExternal;
 use riscv::interrupt::{Exception, Interrupt, Trap};

@@ -1,15 +1,12 @@
 use heapless::Vec;
 
-
 use crate::threading::scheduler::reschedule;
-use critical_section::Mutex;
 use heapless::mpmc;
 use riscv::_export::critical_section;
-use riscv::result;
 
 use super::message::{UartDriverMessage, MAX_RECEVIED_BYTES};
 use super::uart16550::UART;
-use super::registers::{read_reg,  write_reg, Register, Masks};
+use super::registers::{read_reg, Register, Masks};
 
 pub fn get_interrupt_reason_from(addr:usize) -> Option<UartDriverMessage>{
 	let iir = read_reg(addr, Register::Iir);
@@ -48,7 +45,9 @@ pub fn put_into_queue(message: UartDriverMessage, queue: &mpmc::QueueView<UartDr
             let mut res = queue.enqueue(message);
             if let Err(v) = res {
                 res = queue.enqueue(v);
+				
             }
+			
             res
         }) {
             Ok(_) => break,
@@ -63,21 +62,23 @@ pub fn put_into_queue(message: UartDriverMessage, queue: &mpmc::QueueView<UartDr
 
 // TO DO СДЕЛАТЬ ГЛОБАЛЬНУЮ ОЧЕРЕДЬ
 pub extern "C" fn uart_driver() -> ! {
-
     loop {
         let message: Option<UartDriverMessage> =
             critical_section::with(|_| UART_DRIVER_QUEUE.dequeue());
         match message {
+			
             Some(UartDriverMessage::Receive { data }) => {
+				println!("RX IRQ!");
 				critical_section::with(|cs|{
 					let mut uart = UART.borrow(cs).borrow_mut();
-					uart.receive_data(&data);
+					uart.handle_rx_interrupt(&data);
 				});
             }
             Some(UartDriverMessage::Send) => {
+				println!("TX IRQ!");
 				critical_section::with(|cs|{
 					let mut uart = UART.borrow(cs).borrow_mut();
-					uart.send_data();
+					uart.handle_tx_interrupt();
 				});
             }
             Some(UartDriverMessage::LineStatus) => {}

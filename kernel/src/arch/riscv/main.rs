@@ -9,6 +9,7 @@ use crate::arch::AddressSpace;
 use crate::boot::BootContext;
 use crate::{arch::riscv::memory::layout::KERNEL_LAYOUT, kernel_main};
 use core::arch::asm;
+use ::alloc::vec::Vec;
 use fdt::Fdt;
 use riscv::interrupt::Interrupt::{SupervisorExternal, SupervisorTimer};
 
@@ -42,7 +43,8 @@ fn riscv_main(_hart_id: usize, dtc: usize) -> ! {
 
     let mut address_space = AddressSpace::new();
 
-    let mappings = map_kernel_sections(&mut address_space);
+    // let mappings = map_kernel_sections(&mut address_space);
+	let mappings = Vec::new();
 
     // unsafe {
     //     address_space.switch();

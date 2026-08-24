@@ -10,3 +10,4 @@ pub use driver::put_into_queue;
 pub use driver::UART_DRIVER_QUEUE;
 pub use driver::get_interrupt_reason_from;
 pub use message::UartDriverMessage;
+pub use registers::{DataBits, TriggerLevel, StopBits, Parity};

@@ -64,7 +64,6 @@ pub fn setup_threads() {
 	// terminal task
 	let terminal_id = spawn_kernel(terminal_task);
 	
-	unsafe {get_thread(uart_id).user_frame.set_arg0(0)};
     unsafe {
         THREADS_INDEXES.driver_task = driver_task_id;
         THREADS_INDEXES.user_start = driver_task_id + 1;

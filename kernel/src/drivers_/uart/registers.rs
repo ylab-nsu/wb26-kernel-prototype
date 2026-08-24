@@ -17,6 +17,31 @@ pub enum Register {
     Scr,
 }
 
+pub enum TriggerLevel{
+	One,
+	Four,
+	Eight,
+	Fourteen,
+}
+
+pub enum DataBits {
+    Five,
+    Six,
+    Seven,
+    Eight,
+}
+
+pub enum StopBits {
+    One,
+    Two,
+}
+
+pub enum Parity {
+    None,
+    Odd,
+    Even,
+}
+
 impl Register {
     pub fn offset(self) -> usize {
         match self {
@@ -53,6 +78,7 @@ pub fn write_reg(addr: usize, reg: Register, value: u8) {
 pub struct Masks;
 const BUFFER_SIZE: usize = 256;
 const MAX_RECEVIED_BYTES: usize = 16;
+pub const TX_FIFO_SIZE: usize = 16;
 
 impl Masks {
     // LSR bits
@@ -77,4 +103,21 @@ impl Masks {
     pub const FCR_ENABLE_FIFO: u8 = 1 << 0;
     pub const FCR_RX_CLEAR_FIFO: u8 = 1 << 1;
     pub const FCR_TX_CLEAR_FIFO: u8 = 1 << 2;
+	pub const FCR_RX_TRIGGER_1: u8 = 0b00 << 6;
+	pub const FCR_RX_TRIGGER_4: u8 = 0b01 << 6;
+	pub const FCR_RX_TRIGGER_8: u8 = 0b10 << 6;
+	pub const FCR_RX_TRIGGER_14: u8 = 0b11 << 6;
+
+	// LCR bits
+	pub const LCR_DLAB: u8 = 1 << 7;
+	pub const LCR_DATA_BITS_5: u8 = 0b00;
+	pub const LCR_DATA_BITS_6: u8 = 0b01;
+	pub const LCR_DATA_BITS_7: u8 = 0b10;
+	pub const LCR_DATA_BITS_8: u8 = 0b11;
+	pub const LCR_STOP_BITS_1: u8 = 0;
+	pub const LCR_STOP_BITS_2: u8 = 1 << 2;
+	pub const LCR_PARITY_NONE: u8 = 0;
+	pub const LCR_PARITY_EVEN: u8 = 0b11 << 3;
+	pub const LCR_PARITY_ODD:  u8 = 0b01 << 3;
+
 }

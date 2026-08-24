@@ -73,7 +73,7 @@ _abs_start:
     li t2, 0x2000 # Bit 13 is FS least significant bit
     csrrc x0, sstatus, t0
     csrrs x0, sstatus, t2
-    fscsr x0
+    # fscsr x0
 
     # Initialize FP and jump to __riscv_main
     mv fp, sp

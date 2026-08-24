@@ -24,6 +24,7 @@ use riscv::_export::critical_section;
 
 use crate::arch::{traits::TargetPlatform, Platform};
 use crate::drivers_::uart::UART;
+use crate::drivers_::uart::{TriggerLevel, DataBits, StopBits, Parity};
 
 use crate::boot::BootContext;
 use crate::threading::init::setup_threads;
@@ -33,12 +34,16 @@ pub fn kernel_main(_ctx: BootContext) -> ! {
 	
     setup_threads();
 
-	println!("=== im here===");
 	critical_section::with(|cs|{
 		let mut uart = UART.borrow(cs).borrow_mut();
-		uart.init();
+		uart.init(TriggerLevel::Fourteen);
 		uart.enable_rx_interrupt();
-		uart.write(b"Hello world\n");
+		uart.set_baud_rate(115_200);
+		uart.set_line_config(DataBits::Eight, Parity::Even, StopBits::One);
+
+		if uart.write(b"Hello world\n").is_err(){
+			println!("Write error");
+		};
 	});
 
     unsafe {
