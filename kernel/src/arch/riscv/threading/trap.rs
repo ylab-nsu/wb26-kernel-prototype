@@ -1,7 +1,8 @@
 use crate::arch::traits::TargetTrapFrame;
 use crate::syscall::handle_syscall;
 use crate::arch::riscv::plic::{plic_claim, plic_complete};
-use crate::uart2::UART;
+use crate::drivers_::uart::{UART_DRIVER_QUEUE, put_into_queue, UartDriverMessage, get_interrupt_reason_from};
+
 use riscv::interrupt::Interrupt::SupervisorExternal;
 use riscv::interrupt::{Exception, Interrupt, Trap};
 use riscv::register::mtvec::TrapMode;
@@ -99,7 +100,7 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
         return false;
     }
 
-    info!("Trap cause: {x:?}");
+    //info!("Trap cause: {x:?}");
 
     let mut need_reschedule = false;
 
@@ -122,14 +123,16 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
 
         Trap::Interrupt(Interrupt::SupervisorExternal) => {
 			let irq  = plic_claim(); 
+			// TO DO Придумать способ по прерыванию получать нужный адрес для добавления в очередь
 			match irq {
 				10 =>{
-					println!("Interrupt: {}", irq);
-					let mut uart=  UART.lock();
-					uart.handle_interrupt();
+					if let Some(message) = get_interrupt_reason_from(0x10000000) {
+    					put_into_queue(message, &UART_DRIVER_QUEUE);
+					}
 				}
 				_ => { println!("Interrupt: {}", irq);}
 			}
+			
 			plic_complete(irq);
 		}
 

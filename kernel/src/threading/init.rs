@@ -3,7 +3,7 @@ use crate::drivers::driver_task;
 use crate::threading::thread::{
     create_empty_thread, get_thread, spawn_kernel, spawn_user, THREADS_INDEXES,
 };
-use crate::uart::uart_driver;
+use crate::drivers_::uart::{uart_driver, terminal_task};
 use core::arch::global_asm;
 
 pub static mut NEXT_USER_STACK: usize = 0x47000000;
@@ -60,7 +60,11 @@ pub fn setup_threads() {
     create_empty_thread();
 
     let driver_task_id = spawn_kernel(driver_task);
-    spawn_kernel(uart_driver);
+    let uart_id = spawn_kernel(uart_driver);
+	// terminal task
+	let terminal_id = spawn_kernel(terminal_task);
+	
+	unsafe {get_thread(uart_id).user_frame.set_arg0(0)};
     unsafe {
         THREADS_INDEXES.driver_task = driver_task_id;
         THREADS_INDEXES.user_start = driver_task_id + 1;

@@ -69,6 +69,6 @@ pub fn reschedule() {
         }
     };
 
-    info!("Switching threads from {} to {}", curr.id, next.id);
+    //info!("Switching threads from {} to {}", curr.id, next.id);
     unsafe { switch_thread(curr.context, next.context) };
 }
