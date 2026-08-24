@@ -6,7 +6,8 @@ const STACK_SIZE: usize = 256 * PAGE_SIZE; // 1 MB
 
 #[used]
 #[link_section = ".stack"]
-static STACK_MEM: [MaybeUninit<u8>; STACK_SIZE] = [unsafe { zeroed() }; STACK_SIZE];
+#[used]
+static STACK_MEM: [MaybeUninit<u8>; STACK_SIZE] = [MaybeUninit::uninit(); STACK_SIZE];
 
 fn read_sp() -> usize {
     let sp: usize;

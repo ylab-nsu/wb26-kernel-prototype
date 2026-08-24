@@ -1,7 +1,8 @@
-use core::{mem::{MaybeUninit, zeroed}, ptr::addr_of};
+use crate::arch::riscv::memory::layout::KERNEL_LAYOUT;
+use crate::arch::riscv::vm::PAGE_SIZE;
+use core::mem::MaybeUninit;
 use embedded_alloc::LlffHeap as Heap;
-
-use crate::arch::riscv::{memory::layout::KERNEL_LAYOUT, vm::PAGE_SIZE};
+use sync_unsafe_cell::SyncUnsafeCell;
 
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
@@ -9,11 +10,11 @@ static HEAP: Heap = Heap::empty();
 const HEAP_SIZE: usize = 256 * PAGE_SIZE; // 1 MB
 
 #[link_section = ".heap"]
-#[used]
-static HEAP_MEM: [MaybeUninit<u8>; HEAP_SIZE] = [unsafe { zeroed() }; HEAP_SIZE];
+static HEAP_MEM: SyncUnsafeCell<[MaybeUninit<u8>; HEAP_SIZE]> =
+    SyncUnsafeCell::new([MaybeUninit::uninit(); HEAP_SIZE]);
 
 pub fn init_heap() {
-    let heap_addr = addr_of!(HEAP_MEM) as usize;
+    let heap_addr = HEAP_MEM.get() as usize;
 
     debug_assert!(heap_addr >= KERNEL_LAYOUT.sheap);
     debug_assert!(heap_addr + HEAP_SIZE <= KERNEL_LAYOUT.eheap);

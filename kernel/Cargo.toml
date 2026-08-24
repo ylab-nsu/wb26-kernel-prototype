@@ -33,10 +33,3 @@ sync-unsafe-cell = "0.1.1"
 
 [build-dependencies]
 llvm-tools = "0.1.1"
-
-[profile.dev]
-panic = "abort"
-
-[profile.release]
-panic = "abort"
-lto = true

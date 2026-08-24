@@ -1,21 +1,20 @@
 QEMU = "qemu-system-riscv64"
+TARGET = riscv64gc-unknown-none-elf
+QEMU_FLAGS = -machine virt -nographic -no-shutdown -serial mon:stdio
 
-.PHONY: run debug
+KERNEL_DEBUG = target/$(TARGET)/debug/kernel
+KERNEL_RELEASE = target/$(TARGET)/release/kernel
+
+.PHONY: run run-release debug debug-release
 
 run:
-	$(QEMU) -kernel target/riscv64gc-unknown-none-elf/debug/kernel -machine virt -nographic -no-shutdown -serial mon:stdio 
+	$(QEMU) -kernel $(KERNEL_DEBUG) $(QEMU_FLAGS)
+
+run-release:
+	$(QEMU) -kernel $(KERNEL_RELEASE) $(QEMU_FLAGS)
 
 debug:
-	$(QEMU) -kernel target/riscv64gc-unknown-none-elf/debug/kernel -machine virt -nographic -no-shutdown -serial mon:stdio -s -S
+	$(QEMU) -kernel $(KERNEL_DEBUG) $(QEMU_FLAGS) -s -S
 
-release:
-	$(QEMU) -kernel target/riscv64gc-unknown-none-elf/release/kernel -machine virt -nographic -no-shutdown -serial mon:stdio
-
-rx-test:
-	python3 -c 'import sys; sys.stdout.write("A" * 14); sys.stdout.flush()' | \
-	$(QEMU) \
-		-kernel target/riscv64gc-unknown-none-elf/debug/kernel \
-		-machine virt \
-		-nographic \
-		-no-shutdown \
-		-serial stdio
+debug-release:
+	$(QEMU) -kernel $(KERNEL_RELEASE) $(QEMU_FLAGS) -s -S
