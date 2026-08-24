@@ -1,9 +1,10 @@
 use crate::{
     allocator::AllocatorError,
     arch::{Mapping, PhysicalAddress, PhysicalAllocation, PlatformDuration, VirtualAddress},
-    timers::TimerCallback,
+    timers::{TimerCallback, TimerHandle},
     vm::{MappingFlags, MappingPermissions},
 };
+use alloc::sync::Arc;
 
 pub trait TargetPlatform {
     fn init();
@@ -105,7 +106,7 @@ pub trait TargetInstant: Copy {
 
 pub trait TargetTimerQueue {
     //! Trait with functions to add timers to the timer queue
-    //! 
+    //!
     //! # Examples of timers
     //! ```
     //! // Simple repeating timer
@@ -113,7 +114,7 @@ pub trait TargetTimerQueue {
     //!     Duration::from_secs(1).into(),
     //!     TimerCallback::immediate(|_| info!("1 Second timer")),
     //! );
-    //! // One shot timer                                                   
+    //! // One shot timer
     //! TimerQueue::add_oneshot_timer(
     //!     Duration::from_secs(10).into(),
     //!     TimerCallback::immediate(|_| info!("10 second oneshot timer")),
@@ -168,7 +169,16 @@ pub trait TargetTimerQueue {
     //!         to_capture_mutable += 1;
     //!     }),
     //! );
+    //! // Stop timer with handle
+    //! let handle = TimerQueue::add_repeating_timer(Duration::from_secs(2).into(), TimerCallback::immediate(|_| {
+    //!     info!("1 second timer");
+    //! }));
+    //! TimerQueue::add_oneshot_timer(Duration::from_secs(5).into(), TimerCallback::immediate( move |_| {
+    //!     handle.stop();
+    //!     info!("timer stopped");
+    //! }));
     //! ```
-    fn add_oneshot_timer(delta: PlatformDuration, callback: TimerCallback);
-    fn add_repeating_timer(interval: PlatformDuration, callback: TimerCallback);
+    fn add_oneshot_timer(delta: PlatformDuration, callback: TimerCallback) -> Arc<TimerHandle>;
+    fn add_repeating_timer(interval: PlatformDuration, callback: TimerCallback)
+        -> Arc<TimerHandle>;
 }

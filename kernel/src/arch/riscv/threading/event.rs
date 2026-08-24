@@ -1,11 +1,13 @@
 use crate::arch::riscv::time::{TickDuration, TickInstant};
 use crate::arch::traits::{TargetInstant, TargetTimerQueue};
 use crate::sync::Mutex;
-use crate::timers::{TimerCallback, TimerCallbackContext};
+use crate::timers::{Timer, TimerCallback, TimerCallbackContext, TimerHandle, TimerKind};
+use alloc::borrow::ToOwned;
 use alloc::collections::binary_heap::BinaryHeap;
-use core::cmp::{Eq, Ord, PartialEq, PartialOrd};
+use alloc::sync::Arc;
 use heapless::Vec;
 use riscv::_export::critical_section;
+use riscv::register::Permission::W;
 
 struct Timers {
     queue: BinaryHeap<Timer>,
@@ -36,43 +38,6 @@ impl Timers {
 }
 
 static TIMERS: Mutex<Timers> = Mutex::new(Timers::new());
-
-enum TimerKind {
-    OneShot,
-    Repeating { interval: TickDuration },
-}
-
-struct Timer {
-    callback: TimerCallback,
-    target_time: TickInstant,
-    start_or_last_fire_time: TickInstant,
-    kind: TimerKind,
-}
-
-impl Ord for Timer {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        other.target_time.cmp(&self.target_time).then(
-            other
-                .start_or_last_fire_time
-                .cmp(&self.start_or_last_fire_time),
-        )
-    }
-}
-
-impl PartialOrd for Timer {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for Timer {
-    fn eq(&self, other: &Self) -> bool {
-        self.target_time == other.target_time
-            && self.start_or_last_fire_time == other.start_or_last_fire_time
-    }
-}
-
-impl Eq for Timer {}
 
 fn fire_timers_ready_by_time(time: TickInstant) -> bool {
     let mut reschedule = false;
@@ -108,6 +73,9 @@ fn fire_timers_ready_by_time(time: TickInstant) -> bool {
         let mut timers_to_reinsert: Vec<Timer, 16> = Vec::new();
 
         for mut event in ready_timers {
+            if event.handle.is_stoped() {
+                continue;
+            }
             match &mut event.callback {
                 TimerCallback::Reschedule => {
                     reschedule = true;
@@ -130,7 +98,7 @@ fn fire_timers_ready_by_time(time: TickInstant) -> bool {
                     event.target_time = event.target_time + interval;
                     let _ = timers_to_reinsert.push(event);
                 }
-                TimerKind::OneShot => {}
+                _ => {}
             }
         }
 
@@ -155,7 +123,7 @@ fn add_timer(
     target_time: TickInstant,
     callback: TimerCallback,
     interval: Option<TickDuration>,
-) {
+) -> Arc<TimerHandle> {
     critical_section::with(|_| {
         let mut timers = TIMERS.lock();
         match timers.queue.peek() {
@@ -169,29 +137,32 @@ fn add_timer(
         };
         let timer_type =
             interval.map_or(TimerKind::OneShot, |i| TimerKind::Repeating { interval: i });
+        let handle = Arc::new(TimerHandle::new());
         timers.queue.push(Timer {
             target_time: target_time,
             start_or_last_fire_time: start_time,
             callback,
             kind: timer_type,
+            handle: handle.clone(),
         });
-    });
+        handle
+    })
 }
 
 pub struct TimerQueue;
 
 impl TargetTimerQueue for TimerQueue {
-    fn add_oneshot_timer(delta: TickDuration, callback: TimerCallback) {
+    fn add_oneshot_timer(delta: TickDuration, callback: TimerCallback) -> Arc<TimerHandle> {
         let start_time = TickInstant::now();
-        add_timer(start_time, start_time + delta, callback, None);
+        add_timer(start_time, start_time + delta, callback, None)
     }
-    fn add_repeating_timer(interval: TickDuration, callback: TimerCallback) {
+    fn add_repeating_timer(interval: TickDuration, callback: TimerCallback) -> Arc<TimerHandle> {
         let start_time = TickInstant::now();
         add_timer(
             TickInstant::now(),
             start_time + interval,
             callback,
             Some(interval),
-        );
+        )
     }
 }

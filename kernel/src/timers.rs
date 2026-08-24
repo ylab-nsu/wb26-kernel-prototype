@@ -1,5 +1,7 @@
-use crate::arch::PlatformInstant;
+use crate::arch::{PlatformDuration, PlatformInstant};
 use alloc::boxed::Box;
+use alloc::sync::Arc;
+use core::sync::atomic::AtomicBool;
 
 pub struct TimerCallbackContext {
     pub handle_time: PlatformInstant,
@@ -35,5 +37,65 @@ impl TimerCallback {
 
     pub fn soft(_: fn()) -> Self {
         todo!("implement timer soft callbacks");
+    }
+}
+
+pub enum TimerKind {
+    OneShot,
+    Repeating { interval: PlatformDuration },
+}
+
+pub struct Timer {
+    pub callback: TimerCallback,
+    pub target_time: PlatformInstant,
+    pub start_or_last_fire_time: PlatformInstant,
+    pub kind: TimerKind,
+    pub handle: Arc<TimerHandle>,
+}
+
+impl Ord for Timer {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        other.target_time.cmp(&self.target_time).then(
+            other
+                .start_or_last_fire_time
+                .cmp(&self.start_or_last_fire_time),
+        )
+    }
+}
+
+impl PartialOrd for Timer {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for Timer {
+    fn eq(&self, other: &Self) -> bool {
+        self.target_time == other.target_time
+            && self.start_or_last_fire_time == other.start_or_last_fire_time
+    }
+}
+
+impl Eq for Timer {}
+
+#[derive(Default)]
+pub struct TimerHandle {
+    to_stop: AtomicBool,
+}
+
+impl TimerHandle {
+    pub fn new() -> Self {
+        TimerHandle {
+            to_stop: AtomicBool::new(false),
+        }
+    }
+
+    pub fn stop(&self) {
+        self.to_stop
+            .store(true, core::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn is_stoped(&self) -> bool {
+        self.to_stop.load(core::sync::atomic::Ordering::SeqCst)
     }
 }
