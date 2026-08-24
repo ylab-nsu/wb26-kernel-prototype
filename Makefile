@@ -1,9 +1,20 @@
 QEMU = "qemu-system-riscv64"
+TARGET = riscv64gc-unknown-none-elf
+QEMU_FLAGS = -machine virt -nographic -no-shutdown -serial mon:stdio
 
-.PHONY: run debug
+KERNEL_DEBUG = target/$(TARGET)/debug/kernel
+KERNEL_RELEASE = target/$(TARGET)/release/kernel
+
+.PHONY: run run-release debug debug-release
 
 run:
-	$(QEMU) -kernel target/riscv64gc-unknown-none-elf/debug/kernel -machine virt -nographic -no-shutdown -serial mon:stdio
+	$(QEMU) -kernel $(KERNEL_DEBUG) $(QEMU_FLAGS)
+
+run-release:
+	$(QEMU) -kernel $(KERNEL_RELEASE) $(QEMU_FLAGS)
 
 debug:
-	$(QEMU) -kernel target/riscv64gc-unknown-none-elf/debug/kernel -machine virt -nographic -no-shutdown -serial mon:stdio -s -S
+	$(QEMU) -kernel $(KERNEL_DEBUG) $(QEMU_FLAGS) -s -S
+
+debug-release:
+	$(QEMU) -kernel $(KERNEL_RELEASE) $(QEMU_FLAGS) -s -S
