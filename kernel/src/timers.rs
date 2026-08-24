@@ -8,45 +8,43 @@ pub struct TimerCallbackContext {
     pub target_time: PlatformInstant,
 }
 
-pub trait TimerCallbackFunction: FnMut(TimerCallbackContext) + Send {}
-impl<T: FnMut(TimerCallbackContext) + Send> TimerCallbackFunction for T {}
-pub type TimerCallbackFunctionBoxed = Box<dyn TimerCallbackFunction>;
-
 pub enum TimerCallback {
-    Reschedule,
-    // Inside interrupt
-    Immediate {
-        callback: TimerCallbackFunctionBoxed,
+    OneShot {
+        callback: Box<dyn FnOnce(TimerCallbackContext) + Send>,
     },
-    // TODO: Elsewhere
-    Soft {
-        callback: fn(),
+    Repeating { 
+        callback: Box<dyn FnMut(TimerCallbackContext) + Send>,
+        interval: PlatformDuration 
     },
 }
 
 impl TimerCallback {
-    pub fn immediate<T: TimerCallbackFunction + 'static>(callback: T) -> Self {
-        TimerCallback::Immediate {
+    pub fn one_shot<T: FnOnce(TimerCallbackContext) + Send + 'static>(callback: T) -> Self {
+        TimerCallback::OneShot {
             callback: Box::new(callback),
         }
     }
 
-    pub fn reschedule() -> Self {
-        TimerCallback::Reschedule
-    }
-
-    pub fn soft(_: fn()) -> Self {
-        todo!("implement timer soft callbacks");
+    pub fn repeating<T: FnMut(TimerCallbackContext) + Send + 'static>(callback: T, interval: PlatformDuration) -> Self {
+        TimerCallback::Repeating {
+            callback: Box::new(callback),
+            interval
+        }
     }
 }
 
+
 pub enum TimerKind {
-    OneShot,
-    Repeating { interval: PlatformDuration },
+    Reschedule,
+    // Inside interrupt
+    Immediate {
+        callback: TimerCallback
+    },
+    // TODO: Elsewhere
+    Soft,
 }
 
 pub struct Timer {
-    pub callback: TimerCallback,
     pub target_time: PlatformInstant,
     pub start_or_last_fire_time: PlatformInstant,
     pub kind: TimerKind,

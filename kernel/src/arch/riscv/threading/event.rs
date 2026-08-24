@@ -74,30 +74,38 @@ fn fire_timers_ready_by_time(time: TickInstant) -> bool {
             if event.handle.is_stoped() {
                 continue;
             }
-            match &mut event.callback {
-                TimerCallback::Reschedule => {
+            match event.kind {
+                TimerKind::Reschedule => {
                     reschedule = true;
+                    let _ = timers_to_reinsert.push(event);
+                    continue;
                 }
-                TimerCallback::Immediate { callback } => {
-                    let ctx = TimerCallbackContext {
-                        target_time: event.target_time,
-                        handle_time: time,
-                    };
-                    (callback)(ctx);
+                TimerKind::Soft => {
+                    todo!("Soft timer");
                 }
-                TimerCallback::Soft { .. } => {
-                    todo!("Implement soft timers")
+                TimerKind::Immediate { mut callback } => {
+
+                    match callback {
+                        TimerCallback::OneShot { callback } => {
+                            let ctx = TimerCallbackContext {
+                                target_time: event.target_time,
+                                handle_time: time,
+                            };
+                            (callback)(ctx);
+                        }
+                        TimerCallback::Repeating { ref mut callback, .. } => {
+                            let ctx = TimerCallbackContext {
+                                target_time: event.target_time,
+                                handle_time: time,
+                            };
+                            (callback)(ctx);
+                            let _ = timers_to_reinsert.push(event);
+                        }
+                    }
+
                 }
             }
 
-            match event.kind {
-                TimerKind::Repeating { interval } => {
-                    event.start_or_last_fire_time = time;
-                    event.target_time = event.target_time + interval;
-                    let _ = timers_to_reinsert.push(event);
-                }
-                _ => {}
-            }
         }
 
         if !timers_to_reinsert.is_empty() {
