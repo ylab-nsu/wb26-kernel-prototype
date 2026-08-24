@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
-use crate::arch::traits::TargetPciBus;
-use crate::arch::PciBus;
+use crate::arch::traits::{ TargetPciBus, TargetInterruptController };
+use crate::arch::{ PciBus, InterruptController };
 
 // Standard PCI Configuration Space offsets
 pub const PCI_VENDOR_DEVICE_REG: u16 = 0x00;
@@ -8,10 +8,13 @@ pub const PCI_COMMAND_REG: u16 = 0x04;
 pub const PCI_CLASS_REVISION_REG: u16 = 0x08;
 pub const PCI_BAR0_REG: u16 = 0x10;
 pub const PCI_HEADER_TYPE_REG: u16 = 0x1C;
+pub const PCI_INTERRUPT_LINE_REG: u16 = 0x3C;
+pub const PCI_INTERRUPT_PIN_REG: u16 = 0x3D;
 
 // PCI Command Register
 pub const PCI_COMMAND_MEMORY_SPACE: u16 = 1 << 1;
 pub const PCI_COMMAND_IO_SPACE: u16 = 1 << 0;
+pub const PCI_COMMAND_INTERRUPT_DISABLE: u16 = 1 << 10;
 
 // Memory BAR fields
 pub const PCI_BAR_IO_SPACE: u32 = 1;
@@ -58,6 +61,25 @@ pub fn pci_enable_device(bus: u8, dev: u8, func: u8) {
         PCI_COMMAND_REG,
         command | PCI_COMMAND_MEMORY_SPACE | PCI_COMMAND_IO_SPACE,
     );
+}
+
+// TODO: Accept closure as interrupt handler
+pub fn pci_enable_interrupt(bus: u8, dev: u8, func: u8) {
+    let command = PciBus::pci_read16(bus, dev, func, PCI_COMMAND_REG);
+
+    PciBus::pci_write16(
+        bus,
+        dev,
+        func,
+        PCI_COMMAND_REG,
+        command & !PCI_COMMAND_INTERRUPT_DISABLE,
+    );
+
+    // TODO: Determine which irq number does pci device use
+    InterruptController::enable_irq(32);
+    InterruptController::enable_irq(33);
+    InterruptController::enable_irq(34);
+    InterruptController::enable_irq(35);
 }
 
 pub fn pci_function_is_present(bus: u8, dev: u8, func: u8) -> bool {

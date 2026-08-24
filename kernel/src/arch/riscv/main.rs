@@ -9,7 +9,7 @@ use crate::boot::BootContext;
 use crate::{arch::riscv::memory::layout::KERNEL_LAYOUT, kernel_main};
 use core::arch::asm;
 use fdt::Fdt;
-use riscv::interrupt::Interrupt::SupervisorTimer;
+use riscv::interrupt::Interrupt::{ SupervisorTimer, SupervisorExternal };
 
 #[export_name = "__riscv_main"]
 fn riscv_main(_hart_id: usize, dtc: usize) -> ! {
@@ -34,6 +34,7 @@ fn riscv_main(_hart_id: usize, dtc: usize) -> ! {
     init_mmu();
     unsafe {
         riscv::interrupt::enable_interrupt(SupervisorTimer);
+        riscv::interrupt::enable_interrupt(SupervisorExternal);
     }
 
     let mut address_space = AddressSpace::new();

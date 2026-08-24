@@ -10,3 +10,4 @@ pub mod threading;
 pub mod vm;
 pub mod write;
 pub mod pci;
+pub mod plic;

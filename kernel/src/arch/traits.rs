@@ -110,3 +110,7 @@ pub trait TargetPciBus {
     fn pci_write16(bus: u8, dev: u8, func: u8, off: u16, val: u16);
     fn pci_write32(bus: u8, dev: u8, func: u8, off: u16, val: u32);
 }
+
+pub trait TargetInterruptController {
+    fn enable_irq(irq: u32);
+}

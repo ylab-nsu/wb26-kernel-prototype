@@ -2,7 +2,7 @@ mod cards;
 
 use bitfield_struct::{ bitfield, bitenum };
 use core::ptr::{read_volatile, write_volatile};
-use crate::pci::{ pci_enable_device, PCI_BAR0_REG };
+use crate::pci::{ pci_enable_device, pci_enable_interrupt, PCI_BAR0_REG };
 use crate::arch::traits::TargetPciBus;
 use crate::arch::PciBus;
 
@@ -931,6 +931,7 @@ impl Sdhci {
     }
 
     fn init(&mut self) {
+        pci_enable_interrupt(self.pci_bus, self.pci_dev, self.pci_func);
         pci_enable_device(self.pci_bus, self.pci_dev, self.pci_func);
 
         // Init all slots

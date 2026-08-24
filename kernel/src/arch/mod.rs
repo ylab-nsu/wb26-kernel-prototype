@@ -1,6 +1,6 @@
 use static_assertions::assert_impl_all;
 
-use crate::arch::traits::{TargetAddress, TargetAddressSpace, TargetContext, TargetDebugWriter, TargetMapping, TargetPhysicalAllocation, TargetPhysicalAllocator, TargetPlatform, TargetTrapFrame, TargetPciBus};
+use crate::arch::traits::{TargetAddress, TargetAddressSpace, TargetContext, TargetDebugWriter, TargetMapping, TargetPhysicalAllocation, TargetPhysicalAllocator, TargetPlatform, TargetTrapFrame, TargetPciBus, TargetInterruptController };
 
 pub mod traits;
 
@@ -23,6 +23,7 @@ cfg_if::cfg_if! {
         pub type Context = riscv::threading::switch::RiscvContext;
 
         pub type PciBus = riscv::pci::RiscvPciBus;
+        pub type InterruptController = riscv::plic::RiscvInterruptController;
 
         pub use riscv::mmu::set_satp;
     } else {
@@ -43,3 +44,4 @@ assert_impl_all!(TrapFrame: TargetTrapFrame);
 assert_impl_all!(Context: TargetContext);
 
 assert_impl_all!(PciBus: TargetPciBus);
+assert_impl_all!(InterruptController: TargetInterruptController);

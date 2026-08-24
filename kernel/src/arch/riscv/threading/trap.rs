@@ -3,6 +3,7 @@ use crate::syscall::handle_syscall;
 use riscv::interrupt::{Exception, Interrupt, Trap};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec::Stvec;
+use crate::arch::riscv::plic::PLIC_CLAIM_HART0_SMODE;
 
 #[repr(C)]
 #[derive(Debug, Default, Clone)]
@@ -114,6 +115,26 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
             sbi::timer::set_timer(u64::MAX).expect("Can't set timer");
             let epc = riscv::register::sepc::read();
             panic!("InstructionFault {epc:x} {}", frame.pc);
+        }
+
+        // TODO: Do proper external interrupt registration and matching
+        Trap::Interrupt(Interrupt::SupervisorExternal) => {
+            unsafe {
+                let claim_addr = PLIC_CLAIM_HART0_SMODE as *mut u32;
+                let irq = core::ptr::read_volatile(claim_addr);
+
+                match irq {
+                    32..=35 => { 
+                        // PCI Interrupt
+                        debug!("PCI INT {}", irq);
+                    }
+                    _ => {
+                        // Unknown IRQ
+                    }
+                }
+
+                core::ptr::write_volatile(claim_addr, irq);
+            }
         }
 
         Trap::Interrupt(cause) => {

@@ -42,6 +42,14 @@ impl Emmc {
         sdhci_slot.clear_all_interrupt_statuses();
         sdhci_slot.enable_all_interrupt_statuses();               
 
+        // Enable command complete interrupts signal
+        unsafe {
+            let normal_interrupt_signal_enable = &raw mut (*sdhci_slot.regs).normal_interrupt_signal_enable;
+            let normal_interrupt_signal_enable_val = read_volatile(normal_interrupt_signal_enable)
+                .with_command_complete(true);
+            write_volatile(normal_interrupt_signal_enable, normal_interrupt_signal_enable_val);
+        }
+
         let ocr = loop {
             // Send CMD1 - receive OCR
             let command = R3_COMMAND_PRESET
