@@ -1,5 +1,6 @@
 use crate::arch::traits::TargetTrapFrame;
 use crate::drivers::driver_task;
+use crate::executor::executor;
 use crate::threading::thread::{
     create_empty_thread, get_thread, spawn_kernel, spawn_user, THREADS_INDEXES,
 };
@@ -63,6 +64,9 @@ pub fn setup_threads() {
         THREADS_INDEXES.driver_task = driver_task_id;
         THREADS_INDEXES.user_start = driver_task_id + 1;
     }
+
+    let executor_id = spawn_kernel(executor);
+    info!("Spawned executor thread {executor_id}");
 
     let user_programs: [UserProgram; _] = [
         UserProgram {
