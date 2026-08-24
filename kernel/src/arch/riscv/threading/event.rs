@@ -2,12 +2,10 @@ use crate::arch::riscv::time::{TickDuration, TickInstant};
 use crate::arch::traits::{TargetInstant, TargetTimerQueue};
 use crate::sync::Mutex;
 use crate::timers::{Timer, TimerCallback, TimerCallbackContext, TimerHandle, TimerKind};
-use alloc::borrow::ToOwned;
 use alloc::collections::binary_heap::BinaryHeap;
-use alloc::sync::Arc;
+use alloc::sync::{Weak, Arc};
 use heapless::Vec;
 use riscv::_export::critical_section;
-use riscv::register::Permission::W;
 
 struct Timers {
     queue: BinaryHeap<Timer>,
@@ -123,7 +121,7 @@ fn add_timer(
     target_time: TickInstant,
     callback: TimerCallback,
     interval: Option<TickDuration>,
-) -> Arc<TimerHandle> {
+) -> Weak<TimerHandle> {
     critical_section::with(|_| {
         let mut timers = TIMERS.lock();
         match timers.queue.peek() {
@@ -138,25 +136,26 @@ fn add_timer(
         let timer_type =
             interval.map_or(TimerKind::OneShot, |i| TimerKind::Repeating { interval: i });
         let handle = Arc::new(TimerHandle::new());
+        let rt_handle = Arc::downgrade(&handle);
         timers.queue.push(Timer {
             target_time: target_time,
             start_or_last_fire_time: start_time,
             callback,
             kind: timer_type,
-            handle: handle.clone(),
+            handle: handle,
         });
-        handle
+        rt_handle
     })
 }
 
 pub struct TimerQueue;
 
 impl TargetTimerQueue for TimerQueue {
-    fn add_oneshot_timer(delta: TickDuration, callback: TimerCallback) -> Arc<TimerHandle> {
+    fn add_oneshot_timer(delta: TickDuration, callback: TimerCallback) -> Weak<TimerHandle> {
         let start_time = TickInstant::now();
         add_timer(start_time, start_time + delta, callback, None)
     }
-    fn add_repeating_timer(interval: TickDuration, callback: TimerCallback) -> Arc<TimerHandle> {
+    fn add_repeating_timer(interval: TickDuration, callback: TimerCallback) -> Weak<TimerHandle> {
         let start_time = TickInstant::now();
         add_timer(
             TickInstant::now(),

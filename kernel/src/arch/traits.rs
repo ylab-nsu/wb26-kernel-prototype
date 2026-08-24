@@ -4,7 +4,7 @@ use crate::{
     timers::{TimerCallback, TimerHandle},
     vm::{MappingFlags, MappingPermissions},
 };
-use alloc::sync::Arc;
+use alloc::sync::Weak;
 
 pub trait TargetPlatform {
     fn init();
@@ -174,11 +174,17 @@ pub trait TargetTimerQueue {
     //!     info!("1 second timer");
     //! }));
     //! TimerQueue::add_oneshot_timer(Duration::from_secs(5).into(), TimerCallback::immediate( move |_| {
-    //!     handle.stop();
-    //!     info!("timer stopped");
+    //!     if let Some(handle) = handle.upgrade() {
+    //!         handle.stop();
+    //!         info!("timer stopped");
+    //!     } else {
+    //!         info!("timer already stopped");
+    //!     }
     //! }));
     //! ```
-    fn add_oneshot_timer(delta: PlatformDuration, callback: TimerCallback) -> Arc<TimerHandle>;
-    fn add_repeating_timer(interval: PlatformDuration, callback: TimerCallback)
-        -> Arc<TimerHandle>;
+    fn add_oneshot_timer(delta: PlatformDuration, callback: TimerCallback) -> Weak<TimerHandle>;
+    fn add_repeating_timer(
+        interval: PlatformDuration,
+        callback: TimerCallback,
+    ) -> Weak<TimerHandle>;
 }
