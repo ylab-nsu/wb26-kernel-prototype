@@ -78,7 +78,6 @@ impl PartialEq for Timer {
 
 impl Eq for Timer {}
 
-#[derive(Default)]
 pub struct TimerHandle {
     to_stop: AtomicBool,
 }
@@ -92,10 +91,10 @@ impl TimerHandle {
 
     pub fn stop(&self) {
         self.to_stop
-            .store(true, core::sync::atomic::Ordering::SeqCst);
+            .store(true, core::sync::atomic::Ordering::Release)
     }
 
     pub fn is_stoped(&self) -> bool {
-        self.to_stop.load(core::sync::atomic::Ordering::SeqCst)
+        self.to_stop.load(core::sync::atomic::Ordering::Acquire)
     }
 }
