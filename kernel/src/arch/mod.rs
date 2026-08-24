@@ -31,6 +31,7 @@ cfg_select! {
         pub type TimerQueue = riscv::threading::event::TimerQueue;
 
         pub use riscv::mmu::set_satp;
+        pub use riscv::memory::layout::KERNEL_LAYOUT;
     }
     _ => {
         compile_error!("Unsupported platform");

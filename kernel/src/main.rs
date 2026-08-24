@@ -11,6 +11,7 @@ pub mod allocator;
 pub mod arch;
 pub mod boot;
 pub mod drivers;
+pub mod exec;
 pub mod sync;
 mod syscall;
 pub mod threading;
@@ -34,6 +35,7 @@ pub fn kernel_main(_ctx: BootContext) -> ! {
     info!("Starting kernel (kernel_main())");
 
     setup_threads();
+    crate::exec::test::run_elf();
     setup_reschedule_timer();
     unsafe {
         Platform::ei();

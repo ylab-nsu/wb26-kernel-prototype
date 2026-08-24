@@ -1,5 +1,5 @@
 use crate::arch::traits::{TargetContext, TargetTrapFrame};
-use crate::arch::{Context, TrapFrame};
+use crate::arch::{AddressSpace, Context, TrapFrame};
 use alloc::vec::Vec;
 
 #[repr(C)]
@@ -19,12 +19,16 @@ pub struct Thread {
     pub id: usize,
     pub context: &'static mut Context,
     pub user_frame: &'static mut TrapFrame, // Cannot be used for kernel threads
+    /// `None` once the thread has been terminated (releases its reference on
+    /// the address space, letting the refcount cascade free it if this was the
+    /// last user).
+    pub address_space: Option<AddressSpace>,
     pub valid: bool,
     pub is_kernel: bool,
 }
 
 impl Thread {
-    unsafe fn new(id: usize) -> Self {
+    unsafe fn new(id: usize, address_space: AddressSpace) -> Self {
         let _left = unsafe { &mut KERNEL_STACKS[id * 16] as *mut Page as usize };
         let right = unsafe { &mut KERNEL_STACKS[(id + 1) * 16] as *mut Page as usize };
 
@@ -44,9 +48,18 @@ impl Thread {
             id,
             context: unsafe { &mut *context },
             user_frame: unsafe { &mut *trap_frame },
+            address_space: Some(address_space),
             valid: true,
             is_kernel: false,
         }
+    }
+
+    /// Release the thread's reference on its address space (and mark it
+    /// invalid). If this was the last thread holding the address space, the
+    /// refcount cascade frees the root page table and every page it held.
+    pub fn terminate(&mut self) {
+        self.valid = false;
+        self.address_space.take();
     }
 }
 
@@ -84,7 +97,7 @@ pub unsafe fn get_thread(id: usize) -> &'static mut Thread {
 pub fn create_empty_thread() -> usize {
     unsafe {
         let id = THREADS.len();
-        let mut pr0 = Thread::new(id);
+        let mut pr0 = Thread::new(id, AddressSpace::new());
         pr0.valid = false;
         THREADS.push(pr0);
         id
@@ -94,8 +107,41 @@ pub fn create_empty_thread() -> usize {
 pub fn spawn_user(f: extern "C" fn() -> !, user_sp: usize) -> usize {
     unsafe {
         let id = THREADS.len();
-        let thread = Thread::new(id);
+        let thread = Thread::new(id, AddressSpace::new());
         *thread.user_frame = TrapFrame::default().with_pc(f as usize).with_sp(user_sp);
+        *thread.context = Context::default()
+            .with_ra(_initial_return_trap as *const () as usize)
+            .with_sp((thread.user_frame as *mut TrapFrame) as usize);
+        THREADS.push(thread);
+        id
+    }
+}
+
+/// Spawn a user thread that runs in its own `AddressSpace`, entered directly
+/// at `entry` (no crt0 trampoline). Ownership of the address space moves into
+/// the thread.
+pub fn spawn_user_in(entry: usize, user_sp: usize, address_space: AddressSpace) -> usize {
+    unsafe {
+        let id = THREADS.len();
+        let thread = Thread::new(id, address_space);
+        *thread.user_frame = TrapFrame::default().with_pc(entry).with_sp(user_sp);
+        *thread.context = Context::default()
+            .with_ra(_initial_return_trap as *const () as usize)
+            .with_sp((thread.user_frame as *mut TrapFrame) as usize);
+        THREADS.push(thread);
+        id
+    }
+}
+
+/// Spawn a user thread that shares an *existing* address space with other
+/// threads. Cloning the AS takes one more reference on its root page table and
+/// on every page it holds (existing refcounts only), so the AS and its pages
+/// live until the last thread using them dies.
+pub fn spawn_user_in_shared(entry: usize, user_sp: usize, address_space: &AddressSpace) -> usize {
+    unsafe {
+        let id = THREADS.len();
+        let thread = Thread::new(id, address_space.clone());
+        *thread.user_frame = TrapFrame::default().with_pc(entry).with_sp(user_sp);
         *thread.context = Context::default()
             .with_ra(_initial_return_trap as *const () as usize)
             .with_sp((thread.user_frame as *mut TrapFrame) as usize);
@@ -107,7 +153,7 @@ pub fn spawn_user(f: extern "C" fn() -> !, user_sp: usize) -> usize {
 pub fn spawn_kernel(f: extern "C" fn() -> !) -> usize {
     unsafe {
         let id = THREADS.len();
-        let mut thread = Thread::new(id);
+        let mut thread = Thread::new(id, AddressSpace::new());
         *thread.user_frame = TrapFrame::default().with_pc(f as usize).with_sp(0);
         *thread.context = Context::default()
             .with_ra(_initial_return_trap as *const () as usize)

@@ -1,5 +1,4 @@
-use core::ptr::NonNull;
-
+use alloc::vec::Vec;
 use riscv::{asm::sfence_vma_all, register::satp};
 
 use crate::{
@@ -25,15 +24,53 @@ pub fn init_page_table_pool() {
     unsafe { PAGE_TABLE_POOL.set_pool_phys_address(page_table_pool_phys_addr) };
 }
 
+/// A process address space.
+///
+/// An address space is a hierarchy of page tables rooted at `root_page_table`.
+/// It is a shared, reference-counted object: the root page table carries its own
+/// refcount (`PageTableRef`), and the pages this AS has mapped are held by
+/// retain references in `pages`. Cloning the AS (sharing it between threads)
+/// takes one more reference on the root table and one more reference on every
+/// held page — no new counters are introduced; the existing page/table refcounts
+/// drive the whole lifetime.
+///
+/// Ownership cascade (top-down only, `AS -> page -> mapping`):
+/// - pages are owned by this AS through `pages` (retain refs);
+/// - each page owns its mappings (`PageMapping`, attached in the physical
+///   allocator) and dies with the page;
+/// - nothing references upward: pages/mappings do not know their AS.
+///
+/// When the last thread holding this AS dies, the AS drops, which releases the
+/// root table and every held page. A page dies only when the last owning AS is
+/// gone, so no manual PTE teardown is ever required.
 pub struct Sv39AddressSpace {
     root_page_table: PageTableRef<Sv39PageTable>,
+    /// Retain references to every page this AS has mapped. Keeps the pages
+    /// alive while the AS lives; dropped (released) when the AS dies.
+    pages: Vec<PhysicalAllocation>,
+}
+
+impl Clone for Sv39AddressSpace {
+    /// Share this AS with another thread: one more reference on the root table
+    /// and one more reference on every held page. Existing refcounts only.
+    fn clone(&self) -> Self {
+        let root_page_table = self.root_page_table.clone();
+        let pages = self.pages.iter().map(|p| p.clone()).collect();
+        Sv39AddressSpace {
+            root_page_table,
+            pages,
+        }
+    }
 }
 
 impl Sv39AddressSpace {
     pub fn new() -> Self {
         let root_page_table = PAGE_TABLE_POOL.alloc_page_table();
 
-        Sv39AddressSpace { root_page_table }
+        Sv39AddressSpace {
+            root_page_table,
+            pages: Vec::new(),
+        }
     }
 
     fn get_l2_page_table(&self, virt_addr: VirtualAddress) -> PageTableRef<Sv39PageTable> {
@@ -58,20 +95,6 @@ impl Sv39AddressSpace {
             flags,
         );
     }
-
-    fn unmap_page(&mut self, virt_addr: VirtualAddress) {
-        self.get_l2_page_table(virt_addr)
-            .write_invalid(virt_addr.vpn_0());
-    }
-
-    unsafe fn unmap(&mut self, virt_addr: VirtualAddress, size: usize) {
-        for offset in (0..size).step_by(PAGE_SIZE) {
-            let va = virt_addr.byte_add(offset);
-
-            debug!("Unmap {va:p}");
-            self.unmap_page(va);
-        }
-    }
 }
 
 impl TargetAddressSpace for Sv39AddressSpace {
@@ -93,12 +116,19 @@ impl TargetAddressSpace for Sv39AddressSpace {
             self.map_page(va, pa, permissions, flags);
         }
 
+        // The page owns this mapping (reverse mapping). The AS keeps ownership
+        // of the page itself via a retain reference so it lives while the AS
+        // lives; when the page dies, its mappings die with it.
+        let vaddr_usize: usize = virt_addr.try_into().unwrap();
+        phys_alloc.attach_mapping(vaddr_usize, permissions, flags);
+        self.pages.push(phys_alloc);
+
         Sv39Mapping {
-            virt_addr,
-            phys_alloc,
+            vaddr: virt_addr,
+            addr: phys_addr,
+            size,
             permissions,
             flags,
-            address_space: NonNull::from_mut(self),
         }
     }
 
@@ -112,25 +142,31 @@ impl TargetAddressSpace for Sv39AddressSpace {
     }
 }
 
+/// Lightweight read-only view of a mapping, returned from [`TargetAddressSpace::map`].
+///
+/// This does NOT own anything: ownership lives in the page (reverse mapping,
+/// kept alive by the AS via its `pages` list). It exists to satisfy the
+/// `TargetMapping` interface (virtual/physical address, size, permissions).
+#[derive(Clone, Copy)]
 pub struct Sv39Mapping {
-    virt_addr: VirtualAddress,
-    phys_alloc: PhysicalAllocation,
+    vaddr: VirtualAddress,
+    addr: PhysicalAddress,
+    size: usize,
     permissions: MappingPermissions,
     flags: MappingFlags,
-    address_space: NonNull<Sv39AddressSpace>,
 }
 
 impl TargetMapping for Sv39Mapping {
     fn virt_addr(&self) -> VirtualAddress {
-        self.virt_addr
+        self.vaddr
     }
 
     fn phys_addr(&self) -> PhysicalAddress {
-        self.phys_alloc.addr()
+        self.addr
     }
 
     fn size(&self) -> usize {
-        self.phys_alloc.size()
+        self.size
     }
 
     fn permissions(&self) -> MappingPermissions {
@@ -139,12 +175,5 @@ impl TargetMapping for Sv39Mapping {
 
     fn flags(&self) -> MappingFlags {
         self.flags
-    }
-}
-
-impl Drop for Sv39Mapping {
-    fn drop(&mut self) {
-        let address_space = unsafe { self.address_space.as_mut() };
-        unsafe { address_space.unmap(self.virt_addr(), self.size()) };
     }
 }

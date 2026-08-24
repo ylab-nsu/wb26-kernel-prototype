@@ -64,30 +64,33 @@ pub fn setup_threads() {
         THREADS_INDEXES.user_start = driver_task_id + 1;
     }
 
-    let user_programs: [UserProgram; _] = [
-        UserProgram {
-            entry: unsafe { user1 },
-            stack_size: 64 * 1024,
-        },
-        UserProgram {
-            entry: unsafe { og_process1 },
-            stack_size: 64 * 1024,
-        },
-        UserProgram {
-            entry: unsafe { og_process2 },
-            stack_size: 64 * 1024,
-        },
-        UserProgram {
-            entry: unsafe { og_process3 },
-            stack_size: 64 * 1024,
-        },
-        UserProgram {
-            entry: unsafe { scull_user },
-            stack_size: 64 * 1024,
-        },
-    ];
-
-    for prog in user_programs {
-        spawn_user_program(&prog);
-    }
+    // Legacy statically-linked crt0 user programs are disabled while the exec
+    // loader is being brought up; they will be replaced by externally-loaded
+    // ELF images (see `exec::test::run_elf`).
+    // let user_programs: [UserProgram; _] = [
+    //     UserProgram {
+    //         entry: unsafe { user1 },
+    //         stack_size: 64 * 1024,
+    //     },
+    //     UserProgram {
+    //         entry: unsafe { og_process1 },
+    //         stack_size: 64 * 1024,
+    //     },
+    //     UserProgram {
+    //         entry: unsafe { og_process2 },
+    //         stack_size: 64 * 1024,
+    //     },
+    //     UserProgram {
+    //         entry: unsafe { og_process3 },
+    //         stack_size: 64 * 1024,
+    //     },
+    //     UserProgram {
+    //         entry: unsafe { scull_user },
+    //         stack_size: 64 * 1024,
+    //     },
+    // ];
+    //
+    // for prog in user_programs {
+    //     spawn_user_program(&prog);
+    // }
 }

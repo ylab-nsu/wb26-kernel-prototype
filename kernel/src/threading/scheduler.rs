@@ -1,5 +1,5 @@
 use crate::arch::set_satp;
-use crate::arch::traits::TargetContext;
+use crate::arch::traits::{TargetAddressSpace, TargetContext};
 use crate::drivers::TEST_DRIVER_ANY;
 use crate::threading::thread::{
     get_current_thread_id, get_thread, get_threads_count, set_current_thread_id, THREADS_INDEXES,
@@ -66,7 +66,11 @@ pub fn reschedule() {
         } else {
             // Setting SPP here will work only without nested interrupts
             riscv::register::sstatus::set_spp(riscv::register::sstatus::SPP::User);
-            set_satp(1);
+            next
+                .address_space
+                .as_ref()
+                .expect("user thread without address space")
+                .switch();
         }
     };
 
