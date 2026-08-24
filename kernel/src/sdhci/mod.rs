@@ -771,16 +771,74 @@ impl Slot {
         }
     }
 
-    fn issue_cpu_data_transfer(
+    fn issue_cpu_read_data_transfer(
         &self,
         block_size: BlockSize,
         block_count: u16,
         argument: u32,
         transfer_mode: TransferMode,
-        command: Command) {
+        command: Command,
+        buff: &mut [u32]) -> Result<(), CommandError> {
 
-        // TODO: Wait 'till CMD and DAT Inhibit is false
-        // TODO: Issue command
+        unsafe {
+            // Wait till DAT and CMD lines are free
+            let present_state = &raw mut (*self.regs).present_state;
+            let mut cmd_and_dat_inhibit = true;
+            for _ in 0..1000 {
+                let present_state_val = read_volatile(present_state);
+                if !present_state_val.command_inhibit_cmd() && !present_state_val.command_inhibit_dat() {
+                    cmd_and_dat_inhibit = false;
+                    break;
+                }
+            }
+            if cmd_and_dat_inhibit {
+                return Err(CommandError::IssuanceTimeout);
+            }
+
+            info!("Issuing CMD{} on slot {}", command.index(), self.slot_num);
+
+            let block_size_ptr = &raw mut (*self.regs).block_size;
+            let block_count_ptr = &raw mut (*self.regs).block_count;
+            let argument_ptr = &raw mut (*self.regs).argument;
+            let transfer_mode_ptr = &raw mut (*self.regs).transfer_mode;
+            let command_ptr = &raw mut (*self.regs).command;
+
+            write_volatile(block_size_ptr, block_size);
+            write_volatile(block_count_ptr, block_count);
+            write_volatile(argument_ptr, argument);
+            write_volatile(transfer_mode_ptr, transfer_mode);
+            write_volatile(command_ptr, command);
+
+            match self.wait_for_command_complete() {
+                Ok(_) => {},
+                Err(err) => return Err(CommandError::InterruptedError(err)),
+            }
+
+            let mut buffer_read_ready = false;
+            for _ in 0..1000 {
+                if read_volatile(present_state).buffer_read_enable() {
+                    buffer_read_ready = true;
+                    break;
+                }
+            }
+            if !buffer_read_ready {
+                return Err(CommandError::IssuanceTimeout);
+            }
+
+            info!("Reading from slot {}", self.slot_num);
+
+            let buffer_reg = &raw mut (*self.regs).buffer_data_port;
+            for word in buff.iter_mut() {
+                // NOTE: Swap, because data port is big-endian eventually
+                // (https://github.com/qemu/qemu/blob/eea8fe61b8be8f3016e522e6af24924a0266ca95/hw/sd/sdhci.c#L490)
+                *word = read_volatile(buffer_reg).swap_bytes();
+            }
+
+            match self.wait_for_transfer_complete() {
+                Ok(_) => Ok(()),
+                Err(err) => Err(CommandError::InterruptedError(err)),
+            }
+        }
     }
     
     fn issue_dma_command(
@@ -806,6 +864,30 @@ impl Slot {
 
                 if normal_int_status_val.command_complete() {
                     let normal_int_status_val = NormalInterruptStatus::new().with_command_complete(true);
+                    write_volatile(normal_int_status, normal_int_status_val);
+
+                    return Ok(());
+                }
+                else if normal_int_status_val.error_interrupt() {
+                    let error_int_status_val = read_volatile(error_int_status);
+                    write_volatile(error_int_status, error_int_status_val);
+
+                    return Err(error_int_status_val);
+                }
+            }
+        }
+    }
+
+    fn wait_for_transfer_complete(&self) -> Result<(), ErrorInterruptStatus> {
+        unsafe {
+            let normal_int_status = &raw mut (*self.regs).normal_interrupt_status;
+            let error_int_status = &raw mut (*self.regs).error_interrupt_status;
+
+            loop {
+                let normal_int_status_val = read_volatile(normal_int_status);
+
+                if normal_int_status_val.transfer_complete() {
+                    let normal_int_status_val = NormalInterruptStatus::new().with_transfer_complete(true);
                     write_volatile(normal_int_status, normal_int_status_val);
 
                     return Ok(());
