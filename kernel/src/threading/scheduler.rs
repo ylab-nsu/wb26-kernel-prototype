@@ -1,6 +1,6 @@
 use crate::arch::set_satp;
 use crate::arch::traits::TargetContext;
-use crate::drivers::TEST_DRIVER_ANY;
+use crate::sdhci::cards::emmc::EMMC_DRIVER_ANY;
 use crate::threading::thread::{
     get_current_thread_id, get_thread, get_threads_count, set_current_thread_id, THREADS_INDEXES,
 };
@@ -29,7 +29,7 @@ pub fn reschedule() {
     // sbi::timer::set_timer(time + 1_000).expect("Can't set timer");
 
     let next_thread = unsafe {
-        if TEST_DRIVER_ANY {
+        if EMMC_DRIVER_ANY {
             THREADS_INDEXES.driver_task
         } else {
             let mut checked = LAST_USER;

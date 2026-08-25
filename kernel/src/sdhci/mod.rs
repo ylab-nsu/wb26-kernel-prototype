@@ -1,8 +1,8 @@
-mod cards;
+pub mod cards;
 
 use bitfield_struct::{ bitfield, bitenum };
 use core::ptr::{read_volatile, write_volatile};
-use crate::pci::{ pci_enable_device, pci_enable_interrupt, PCI_BAR0_REG };
+use crate::pci::{ pci_enable_device, pci_enable_interrupt, pci_enable_bus_mastering, PCI_BAR0_REG };
 use crate::arch::traits::TargetPciBus;
 use crate::arch::PciBus;
 
@@ -711,6 +711,24 @@ impl Slot {
         }
     }
 
+    fn enable_all_error_signals(&self) {
+        unsafe {
+            let error_interrupt_signal_enable = &raw mut (*self.regs).error_interrupt_signal_enable;
+            let error_interrupt_signal_enable_val = ErrorInterruptSignalEnable::new()
+                .with_command_timeout(true)
+                .with_command_crc(true)
+                .with_command_end_bit(true)
+                .with_command_index(true)
+                .with_data_timeout(true)
+                .with_data_crc(true)
+                .with_data_end_bit(true)
+                .with_current_limit(true)
+                .with_auto_cmd12(true)
+                .with_adma(true);
+            write_volatile(error_interrupt_signal_enable, error_interrupt_signal_enable_val);
+        }
+    }
+
     fn clear_all_interrupt_statuses(&self) {
         unsafe {
             let normal_interrupt_status = &raw mut (*self.regs).normal_interrupt_status;
@@ -849,9 +867,43 @@ impl Slot {
         argument: u32,
         transfer_mode: TransferMode,
         command: Command
-        ) {
-        // TODO: Wait 'till CMD and DAT Inhibit is false
-        // TODO: Issue command
+        ) -> Result<(), CommandError> {
+        unsafe {
+            // Wait till DAT and CMD lines are free
+            let present_state = &raw mut (*self.regs).present_state;
+            let mut cmd_and_dat_inhibit = true;
+            for _ in 0..1000 {
+                let present_state_val = read_volatile(present_state);
+                if !present_state_val.command_inhibit_cmd() && !present_state_val.command_inhibit_dat() {
+                    cmd_and_dat_inhibit = false;
+                    break;
+                }
+            }
+            if cmd_and_dat_inhibit {
+                return Err(CommandError::IssuanceTimeout);
+            }
+
+            info!("Issuing CMD{} on slot {}", command.index(), self.slot_num);
+
+            let sdma_address_ptr = &raw mut (*self.regs).sdma_address;
+            let block_size_ptr = &raw mut (*self.regs).block_size;
+            let block_count_ptr = &raw mut (*self.regs).block_count;
+            let argument_ptr = &raw mut (*self.regs).argument;
+            let transfer_mode_ptr = &raw mut (*self.regs).transfer_mode;
+            let command_ptr = &raw mut (*self.regs).command;
+
+            write_volatile(sdma_address_ptr, sdma_address);
+            write_volatile(block_size_ptr, block_size);
+            write_volatile(block_count_ptr, block_count);
+            write_volatile(argument_ptr, argument);
+            write_volatile(transfer_mode_ptr, transfer_mode);
+            write_volatile(command_ptr, command);
+
+            match self.wait_for_command_complete() {
+                Ok(_) => Ok(()),
+                Err(err) => Err(CommandError::InterruptedError(err)),
+            }
+        }
     }
 
     fn wait_for_command_complete(&self) -> Result<(), ErrorInterruptStatus> {
@@ -886,17 +938,17 @@ impl Slot {
             loop {
                 let normal_int_status_val = read_volatile(normal_int_status);
 
-                if normal_int_status_val.transfer_complete() {
-                    let normal_int_status_val = NormalInterruptStatus::new().with_transfer_complete(true);
-                    write_volatile(normal_int_status, normal_int_status_val);
-
-                    return Ok(());
-                }
-                else if normal_int_status_val.error_interrupt() {
+                if normal_int_status_val.error_interrupt() {
                     let error_int_status_val = read_volatile(error_int_status);
                     write_volatile(error_int_status, error_int_status_val);
 
                     return Err(error_int_status_val);
+                }
+                else if normal_int_status_val.transfer_complete() {
+                    let normal_int_status_val = NormalInterruptStatus::new().with_transfer_complete(true);
+                    write_volatile(normal_int_status, normal_int_status_val);
+
+                    return Ok(());
                 }
             }
         }
@@ -931,6 +983,7 @@ impl Sdhci {
     }
 
     fn init(&mut self) {
+        pci_enable_bus_mastering(self.pci_bus, self.pci_dev, self.pci_func);
         pci_enable_interrupt(self.pci_bus, self.pci_dev, self.pci_func);
         pci_enable_device(self.pci_bus, self.pci_dev, self.pci_func);
 

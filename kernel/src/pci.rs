@@ -15,6 +15,7 @@ pub const PCI_INTERRUPT_PIN_REG: u16 = 0x3D;
 pub const PCI_COMMAND_MEMORY_SPACE: u16 = 1 << 1;
 pub const PCI_COMMAND_IO_SPACE: u16 = 1 << 0;
 pub const PCI_COMMAND_INTERRUPT_DISABLE: u16 = 1 << 10;
+pub const PCI_COMMAND_BUS_MASTER: u16 = 1 << 2;
 
 // Memory BAR fields
 pub const PCI_BAR_IO_SPACE: u32 = 1;
@@ -80,6 +81,18 @@ pub fn pci_enable_interrupt(bus: u8, dev: u8, func: u8) {
     InterruptController::enable_irq(33);
     InterruptController::enable_irq(34);
     InterruptController::enable_irq(35);
+}
+
+pub fn pci_enable_bus_mastering(bus: u8, dev: u8, func: u8) {
+    let command = PciBus::pci_read16(bus, dev, func, PCI_COMMAND_REG);
+
+    PciBus::pci_write16(
+        bus,
+        dev,
+        func,
+        PCI_COMMAND_REG,
+        command & !PCI_COMMAND_BUS_MASTER,
+    );
 }
 
 pub fn pci_function_is_present(bus: u8, dev: u8, func: u8) -> bool {

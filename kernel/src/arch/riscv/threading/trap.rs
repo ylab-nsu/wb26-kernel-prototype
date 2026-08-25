@@ -1,3 +1,4 @@
+use crate::sdhci::cards::emmc::{ put_into_queue, EmmcDriverMessage, EMMC_DRIVER_QUEUE };
 use crate::arch::traits::TargetTrapFrame;
 use crate::syscall::handle_syscall;
 use riscv::interrupt::{Exception, Interrupt, Trap};
@@ -126,7 +127,7 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
                 match irq {
                     32..=35 => { 
                         // PCI Interrupt
-                        debug!("PCI INT {}", irq);
+                        put_into_queue(EmmcDriverMessage::Interrupt, EMMC_DRIVER_QUEUE.as_view());
                     }
                     _ => {
                         // Unknown IRQ
