@@ -21,14 +21,20 @@ pub mod vm;
 use core::panic::PanicInfo;
 
 use crate::arch::traits::TargetTimerQueue;
-use crate::arch::{traits::TargetPlatform, Platform, TimerQueue};
+use crate::arch::{
+    traits::{TargetInstant, TargetPlatform},
+    Platform, PlatformInstant, TimerQueue,
+};
 use crate::boot::BootContext;
 use crate::threading::init::setup_threads;
 use core::time::Duration;
 use timers::TimerCallback;
 
 fn setup_reschedule_timer() {
-    TimerQueue::add_repeating_timer(Duration::from_secs(1).into(), TimerCallback::reschedule());
+    TimerQueue::add_timer(
+        PlatformInstant::now(),
+        TimerCallback::reschedule(Duration::from_secs(1)),
+    );
 }
 
 pub fn kernel_main(_ctx: BootContext) -> ! {

@@ -1,9 +1,9 @@
 use crate::arch::riscv::time::{TickDuration, TickInstant};
 use crate::arch::traits::{TargetInstant, TargetTimerQueue};
 use crate::sync::Mutex;
-use crate::timers::{Timer, TimerCallback, TimerCallbackContext, TimerHandle, TimerKind};
+use crate::timers::{Timer, TimerCallback, TimerCallbackContext, TimerHandle};
 use alloc::collections::binary_heap::BinaryHeap;
-use alloc::sync::{Weak, Arc};
+use alloc::sync::{Arc, Weak};
 use heapless::Vec;
 use riscv::_export::critical_section;
 
@@ -74,38 +74,35 @@ fn fire_timers_ready_by_time(time: TickInstant) -> bool {
             if event.handle.is_stoped() {
                 continue;
             }
-            match event.kind {
-                TimerKind::Reschedule => {
+            match event.callback {
+                TimerCallback::Reschedule { interval } => {
                     reschedule = true;
+                    event.target_time = event.target_time + interval;
+                    event.start_or_last_fire_time = time;
                     let _ = timers_to_reinsert.push(event);
                     continue;
                 }
-                TimerKind::Soft => {
-                    todo!("Soft timer");
+                TimerCallback::OneShot { callback } => {
+                    let ctx = TimerCallbackContext {
+                        target_time: event.target_time,
+                        handle_time: time,
+                    };
+                    (callback)(ctx);
                 }
-                TimerKind::Immediate { mut callback } => {
-
-                    match callback {
-                        TimerCallback::OneShot { callback } => {
-                            let ctx = TimerCallbackContext {
-                                target_time: event.target_time,
-                                handle_time: time,
-                            };
-                            (callback)(ctx);
-                        }
-                        TimerCallback::Repeating { ref mut callback, .. } => {
-                            let ctx = TimerCallbackContext {
-                                target_time: event.target_time,
-                                handle_time: time,
-                            };
-                            (callback)(ctx);
-                            let _ = timers_to_reinsert.push(event);
-                        }
-                    }
-
+                TimerCallback::Repeating {
+                    ref mut callback,
+                    interval,
+                } => {
+                    let ctx = TimerCallbackContext {
+                        target_time: event.target_time,
+                        handle_time: time,
+                    };
+                    event.target_time = event.target_time + interval;
+                    event.start_or_last_fire_time = time;
+                    (callback)(ctx);
+                    let _ = timers_to_reinsert.push(event);
                 }
             }
-
         }
 
         if !timers_to_reinsert.is_empty() {
@@ -124,52 +121,31 @@ pub fn fire_ready_timers() -> bool {
     fire_timers_ready_by_time(TickInstant::now())
 }
 
-fn add_timer(
-    start_time: TickInstant,
-    target_time: TickInstant,
-    callback: TimerCallback,
-    interval: Option<TickDuration>,
-) -> Weak<TimerHandle> {
-    critical_section::with(|_| {
-        let mut timers = TIMERS.lock();
-        match timers.queue.peek() {
-            None => {
-                timers.set_timer(Some(target_time));
-            }
-            Some(e) if e.target_time > target_time => {
-                timers.set_timer(Some(target_time));
-            }
-            _ => (),
-        };
-        let timer_type =
-            interval.map_or(TimerKind::OneShot, |i| TimerKind::Repeating { interval: i });
-        let handle = Arc::new(TimerHandle::new());
-        let rt_handle = Arc::downgrade(&handle);
-        timers.queue.push(Timer {
-            target_time: target_time,
-            start_or_last_fire_time: start_time,
-            callback,
-            kind: timer_type,
-            handle: handle,
-        });
-        rt_handle
-    })
-}
-
 pub struct TimerQueue;
 
 impl TargetTimerQueue for TimerQueue {
-    fn add_oneshot_timer(delta: TickDuration, callback: TimerCallback) -> Weak<TimerHandle> {
+    fn add_timer(target_time: TickInstant, callback: TimerCallback) -> Weak<TimerHandle> {
         let start_time = TickInstant::now();
-        add_timer(start_time, start_time + delta, callback, None)
-    }
-    fn add_repeating_timer(interval: TickDuration, callback: TimerCallback) -> Weak<TimerHandle> {
-        let start_time = TickInstant::now();
-        add_timer(
-            TickInstant::now(),
-            start_time + interval,
-            callback,
-            Some(interval),
-        )
+        critical_section::with(|_| {
+            let mut timers = TIMERS.lock();
+            match timers.queue.peek() {
+                None => {
+                    timers.set_timer(Some(target_time));
+                }
+                Some(e) if e.target_time > target_time => {
+                    timers.set_timer(Some(target_time));
+                }
+                _ => (),
+            };
+            let handle = Arc::new(TimerHandle::new());
+            let rt_handle = Arc::downgrade(&handle);
+            timers.queue.push(Timer {
+                target_time: target_time,
+                start_or_last_fire_time: start_time,
+                callback,
+                handle: handle,
+            });
+            rt_handle
+        })
     }
 }

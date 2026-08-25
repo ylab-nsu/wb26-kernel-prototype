@@ -1,6 +1,6 @@
 use crate::{
     allocator::AllocatorError,
-    arch::{Mapping, PhysicalAddress, PhysicalAllocation, PlatformDuration, VirtualAddress},
+    arch::{Mapping, PhysicalAddress, PhysicalAllocation, PlatformInstant, VirtualAddress},
     timers::{TimerCallback, TimerHandle},
     vm::{MappingFlags, MappingPermissions},
 };
@@ -182,9 +182,5 @@ pub trait TargetTimerQueue {
     //!     }
     //! }));
     //! ```
-    fn add_oneshot_timer(delta: PlatformDuration, callback: TimerCallback) -> Weak<TimerHandle>;
-    fn add_repeating_timer(
-        interval: PlatformDuration,
-        callback: TimerCallback,
-    ) -> Weak<TimerHandle>;
+    fn add_timer(target_time: PlatformInstant, callback: TimerCallback) -> Weak<TimerHandle>;
 }

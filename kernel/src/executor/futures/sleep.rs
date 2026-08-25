@@ -2,6 +2,7 @@ use core::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
+    time::Duration,
 };
 
 use crate::arch::{
@@ -35,8 +36,9 @@ impl Future for SleepFuture {
         } else if !self.is_registered {
             self.is_registered = true;
             let waker = cx.waker().clone();
-            TimerQueue::add_oneshot_timer(
-                self.target_time - current_time,
+
+            TimerQueue::add_timer(
+                self.target_time,
                 TimerCallback::one_shot(move |_| {
                     waker.wake();
                 }),
@@ -50,4 +52,10 @@ pub fn sleep<T: Into<PlatformDuration>>(duration: T) -> impl Future<Output = ()>
     let current_time = PlatformInstant::now();
 
     SleepFuture::new(current_time + duration.into())
+}
+
+impl Into<PlatformDuration> for u32 {
+    fn into(self) -> PlatformDuration {
+        Duration::from_micros(self as u64).into()
+    }
 }

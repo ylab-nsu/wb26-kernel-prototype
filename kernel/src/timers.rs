@@ -9,45 +9,46 @@ pub struct TimerCallbackContext {
 }
 
 pub enum TimerCallback {
+    Reschedule {
+        interval: PlatformDuration,
+    },
     OneShot {
         callback: Box<dyn FnOnce(TimerCallbackContext) + Send>,
     },
-    Repeating { 
+    Repeating {
         callback: Box<dyn FnMut(TimerCallbackContext) + Send>,
-        interval: PlatformDuration 
+        interval: PlatformDuration,
     },
 }
 
 impl TimerCallback {
+    pub fn reschedule<I: Into<PlatformDuration>>(interval: I) -> Self {
+        TimerCallback::Reschedule {
+            interval: interval.into(),
+        }
+    }
+
     pub fn one_shot<T: FnOnce(TimerCallbackContext) + Send + 'static>(callback: T) -> Self {
         TimerCallback::OneShot {
             callback: Box::new(callback),
         }
     }
 
-    pub fn repeating<T: FnMut(TimerCallbackContext) + Send + 'static>(callback: T, interval: PlatformDuration) -> Self {
+    pub fn repeating<T: FnMut(TimerCallbackContext) + Send + 'static, I: Into<PlatformDuration>>(
+        callback: T,
+        interval: I,
+    ) -> Self {
         TimerCallback::Repeating {
             callback: Box::new(callback),
-            interval
+            interval: interval.into(),
         }
     }
 }
 
-
-pub enum TimerKind {
-    Reschedule,
-    // Inside interrupt
-    Immediate {
-        callback: TimerCallback
-    },
-    // TODO: Elsewhere
-    Soft,
-}
-
 pub struct Timer {
+    pub callback: TimerCallback,
     pub target_time: PlatformInstant,
     pub start_or_last_fire_time: PlatformInstant,
-    pub kind: TimerKind,
     pub handle: Arc<TimerHandle>,
 }
 
