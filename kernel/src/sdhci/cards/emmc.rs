@@ -102,8 +102,8 @@ impl From<AllocatorError> for EmmcInitializationError {
 
 struct Emmc {
     sdhci_slot: Slot,
-    block_size: u16,    // in bytes
-    bounce_buffer: u32, // buffer in first 4GB of phys memory
+    block_size: u16,                    // in bytes
+    bounce_buffer: PhysicalAllocation,  // buffer in first 4GB of phys memory
     addressing_mode: AddressingMode,
     rca: u16,
 }
@@ -173,13 +173,12 @@ impl Emmc {
         info!("Slot {} state {}", sdhci_slot.slot_num, (status >> 8) & 0b1111);
 
         // Allocate bounce buffer
-        let buff = PhysicalAllocator::alloc_contiguous(512)?;
-        let buff: usize = buff.addr().try_into().unwrap();
+        let buff = PhysicalAllocator::alloc_contiguous_aligned(512, 512)?;
+        let buff_addr: usize = buff.addr().try_into().unwrap();
 
-        debug!("Allocated buffer for DMA: 0x{buff:X}");
         // NOTE: Bounce buffer must be in upper 4GB of memory
-        assert!(buff < (1 << 32));
-        let buff = buff as u32;
+        debug!("Allocated buffer for DMA: 0x{buff_addr:X}");
+        assert!(buff_addr < (1 << 32));
 
         // TODO: Get block size as minimum between slot and eMMC capabilities
         Ok(Emmc { sdhci_slot, block_size: 512, bounce_buffer: buff, addressing_mode, rca })
@@ -203,7 +202,7 @@ impl Emmc {
                     .with_index(17);
                 
                 let res = self.sdhci_slot.issue_dma_command(
-                    self.bounce_buffer,
+                    TryInto::<usize>::try_into(self.bounce_buffer.addr()).unwrap() as u32,
                     block_size,
                     1, 
                     block_index,
@@ -218,12 +217,16 @@ impl Emmc {
                 res
             },
             EmmcOp::Write {block_index: block_index, address: address } => {
-                // TODO: Copy data from buffer to bounce buffer
+                unsafe {
+                    let bounce_buffer = core::slice::from_raw_parts_mut(TryInto::<usize>::try_into(self.bounce_buffer.addr()).unwrap() as *mut u8, self.block_size as usize);
+                    let data_buffer = core::slice::from_raw_parts(address as *const u8, self.block_size as usize);
 
-                /*
+                    bounce_buffer.copy_from_slice(data_buffer);
+                }
+
                 let block_size = BlockSize::new()
-                    .with_transfer_block_size(0x0200)
-                    .with_host_sdma_buffer_boundary(0b111);
+                    .with_transfer_block_size(self.block_size)
+                    .with_host_sdma_buffer_boundary(0);
                 let transfer_mode = TransferMode::new()
                     .with_dma_enable(true)
                     .with_block_count_enable(false)
@@ -233,10 +236,10 @@ impl Emmc {
                 let command = R1_COMMAND_PRESET
                     .with_data_present(true)
                     .with_command_type(CommandType::Normal)
-                    .with_index(17);
+                    .with_index(24);
                 
-                let res = slot.issue_dma_command(
-                    buff,
+                let res = self.sdhci_slot.issue_dma_command(
+                    TryInto::<usize>::try_into(self.bounce_buffer.addr()).unwrap() as u32,
                     block_size,
                     1, 
                     block_index,
@@ -245,11 +248,10 @@ impl Emmc {
                     );
 
                 if res.is_ok() {
-                    info!("Reading from slot {}", slot.slot_num);
+                    info!("Writing to slot {}", self.sdhci_slot.slot_num);
                 }
-                */
 
-                Ok(())
+                res
             },
         }
     }
@@ -276,8 +278,19 @@ pub extern "C" fn driver_task() -> ! {
                         slot.enable_all_error_signals();
                     }
 
-                    // TODO: REMOVE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                    put_into_queue(EmmcDriverMessage::Op(EmmcOp::Read {block_index: 0, address: 0 }), EMMC_DRIVER_QUEUE.as_view());
+                    // TODO: REMOVE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! (it's test)
+                    {
+                        let buff = PhysicalAllocator::alloc_contiguous_aligned(512, 512).unwrap();
+                        let buff_addr: usize = buff.addr().try_into().unwrap();
+                        debug!("Allocated buffer for TEST: 0x{buff_addr:X}");
+                        assert!(buff_addr < (1 << 32));
+                        let buff = core::slice::from_raw_parts_mut(buff_addr as *mut u8, 512);
+                        for byte in buff.iter_mut() {
+                            *byte = 128;
+                        }
+                        put_into_queue(EmmcDriverMessage::Op(EmmcOp::Write { block_index: 0, address: buff_addr }), EMMC_DRIVER_QUEUE.as_view());
+                        put_into_queue(EmmcDriverMessage::Op(EmmcOp::Read {block_index: 0, address: 0 }), EMMC_DRIVER_QUEUE.as_view());
+                    }
 
                     loop { 
                         if interupt_received {
@@ -288,7 +301,7 @@ pub extern "C" fn driver_task() -> ! {
                                         Some(EmmcOp::Read { block_index: _, address: _} ) => {
                                             // TODO: Copy data from bounce buffer to address
                                             unsafe {
-                                                let data_ptr = emmc.bounce_buffer as *mut u8;
+                                                let data_ptr = TryInto::<usize>::try_into(emmc.bounce_buffer.addr()).unwrap() as *mut u8;
                                                 let data = core::slice::from_raw_parts(data_ptr, 512);
                                                 info!("READ: {:x?}", data);
                                             }
