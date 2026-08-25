@@ -496,6 +496,7 @@ struct Sdhci {
     slots: [Option<Slot>; 6],
 }
 
+#[derive(Debug)]
 enum CommandError {
     IssuanceTimeout,
     InterruptedError(ErrorInterruptStatus),
