@@ -796,7 +796,7 @@ impl Slot {
         argument: u32,
         transfer_mode: TransferMode,
         command: Command,
-        buff: &mut [u32]) -> Result<(), CommandError> {
+        buff: &mut [u8]) -> Result<(), CommandError> {
 
         unsafe {
             // Wait till DAT and CMD lines are free
@@ -846,10 +846,12 @@ impl Slot {
             info!("Reading from slot {}", self.slot_num);
 
             let buffer_reg = &raw mut (*self.regs).buffer_data_port;
-            for word in buff.iter_mut() {
-                // NOTE: Swap, because data port is big-endian eventually
-                // (https://github.com/qemu/qemu/blob/eea8fe61b8be8f3016e522e6af24924a0266ca95/hw/sd/sdhci.c#L490)
-                *word = read_volatile(buffer_reg).swap_bytes();
+            for i in 0..(buff.len() / 4) {
+                let word = read_volatile(buffer_reg);
+                let word = word.to_le_bytes();
+                for j in 0..word.len() {
+                    buff[i * 4 + j] = word[j];
+                }
             }
 
             match self.wait_for_transfer_complete() {

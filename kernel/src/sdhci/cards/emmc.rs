@@ -171,7 +171,7 @@ pub extern "C" fn driver_task() -> ! {
                         .with_command_type(CommandType::Normal)
                         .with_index(17);
                     let argument = 0x0;
-                    let mut buffer: [u32; 512 / 4] = [1; _];
+                    let mut buffer: [u8; 512] = [1; _];
 
                     let res = slot.issue_cpu_read_data_transfer(
                         block_size,
@@ -216,7 +216,7 @@ pub extern "C" fn driver_task() -> ! {
                             },
                             Some(EmmcDriverMessage::Read {block_index: block_index, address: address }) => {
                                 if current.is_some() {
-                                    // TODO: Put into pending
+                                    pending_requests.enqueue(EmmcDriverMessage::Read {block_index: block_index, address: address });
                                 }
                                 else {
                                     current = Some(EmmcDriverMessage::Read {block_index: block_index, address: address });
@@ -264,8 +264,8 @@ pub extern "C" fn driver_task() -> ! {
                                         match current {
                                             Some(EmmcDriverMessage::Read { block_index: _, address: _} ) => {
                                                 unsafe {
-                                                    let data_ptr = buff as *mut u32;
-                                                    let data = core::slice::from_raw_parts(data_ptr, 512 / 4);
+                                                    let data_ptr = buff as *mut u8;
+                                                    let data = core::slice::from_raw_parts(data_ptr, 512);
                                                     info!("READ: {:x?}", data);
                                                 }
                                             },
