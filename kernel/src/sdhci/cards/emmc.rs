@@ -22,8 +22,8 @@ const R1_COMMAND_PRESET: Command = Command::new()
     .with_crc_enable(true)
     .with_index_check_enable(true);
 
-pub enum EmmcDriverMessage {
-    Interrupt,
+#[derive(Copy, Clone)]
+pub enum EmmcOp {
     Read {
         block_index: u32,
         address: usize,
@@ -34,29 +34,47 @@ pub enum EmmcDriverMessage {
     },
 }
 
+pub enum EmmcDriverMessage {
+    Interrupt,
+    Op(EmmcOp),
+}
+
 #[allow(deprecated)]
-pub static EMMC_DRIVER_QUEUE: mpmc::Queue<EmmcDriverMessage, 32> = mpmc::Queue::new();
+pub static mut interupt_received: bool = false;
+pub static EMMC_DRIVER_QUEUE: mpmc::Queue<EmmcOp, 32> = mpmc::Queue::new();
 pub static mut EMMC_DRIVER_ANY: bool = true;
 
-pub fn put_into_queue(message: EmmcDriverMessage, queue: &mpmc::QueueView<EmmcDriverMessage>) {
+pub fn put_into_queue(message: EmmcDriverMessage, queue: &mpmc::QueueView<EmmcOp>) {
     let mut message = message;
-    loop {
-        match critical_section::with(|_| {
-            let mut res = queue.enqueue(message);
-            if let Err(v) = res {
-                res = queue.enqueue(v);
+    match message {
+        // Out-of-band message
+        EmmcDriverMessage::Interrupt => {
+            unsafe {
+                interupt_received = true;
             }
-            res
-        }) {
-            Ok(_) => break,
-            Err(v) => {
-                message = v;
-                info!("Cannot put element into queue, park current thread and reschedule");
-                reschedule();
+        },
+        // In-band message
+        EmmcDriverMessage::Op(op) => {
+            let mut op = op;
+            loop {
+                match critical_section::with(|_| {
+                    let mut res = queue.enqueue(op);
+                    if let Err(v) = res {
+                        res = queue.enqueue(v);
+                    }
+                    res
+                }) {
+                    Ok(_) => break,
+                    Err(v) => {
+                        op = v;
+                        info!("Cannot put element into queue, park current thread and reschedule");
+                        reschedule();
+                    }
+                }
             }
-        }
+            unsafe { EMMC_DRIVER_ANY = true };
+        },
     }
-    unsafe { EMMC_DRIVER_ANY = true };
 }
 
 enum AddressingMode {
@@ -137,6 +155,45 @@ impl Emmc {
     }
 }
 
+fn serve_op(slot: Slot, op: EmmcOp, buff: u32) -> Result<(), CommandError> {
+    match op {
+        EmmcOp::Read {block_index: block_index, address: address } => {
+            let block_size = BlockSize::new()
+                .with_transfer_block_size(0x0200)
+                .with_host_sdma_buffer_boundary(0b111);
+            let transfer_mode = TransferMode::new()
+                .with_dma_enable(true)
+                .with_block_count_enable(false)
+                .with_auto_cmd12_enable(false)
+                .with_data_transfer_direction_select(TransferingDirection::Read)
+                .with_multi_block_select(false);
+            let command = R1_COMMAND_PRESET
+                .with_data_present(true)
+                .with_command_type(CommandType::Normal)
+                .with_index(17);
+            
+            let res = slot.issue_dma_command(
+                buff,
+                block_size,
+                1, 
+                block_index,
+                transfer_mode,
+                command
+                );
+
+            if res.is_ok() {
+                info!("Reading from slot {}", slot.slot_num);
+            }
+
+            res
+        },
+        EmmcOp::Write {block_index: block_index, address: address } => {
+            // TODO: Implement
+            Ok(())
+        },
+    }
+}
+
 pub extern "C" fn driver_task() -> ! {
     unsafe {
         let buff = PhysicalAllocator::alloc_contiguous(512);
@@ -154,8 +211,7 @@ pub extern "C" fn driver_task() -> ! {
 
             match emmc.init() {
                 Ok(_) => {
-                    let mut current: Option<EmmcDriverMessage> = None;
-                    let pending_requests: mpmc::Queue<EmmcDriverMessage, 32> = mpmc::Queue::new();
+                    let mut current: Option<EmmcOp> = None;
 
                     let block_size = BlockSize::new()
                         .with_transfer_block_size(0x0200)
@@ -201,51 +257,45 @@ pub extern "C" fn driver_task() -> ! {
                     }
 
                     // TODO: REMOVE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                    put_into_queue(EmmcDriverMessage::Read {block_index: 0, address: 0 }, EMMC_DRIVER_QUEUE.as_view());
+                    put_into_queue(EmmcDriverMessage::Op(EmmcOp::Read {block_index: 0, address: 0 }), EMMC_DRIVER_QUEUE.as_view());
 
                     loop { 
-                        let message = critical_section::with(|_| EMMC_DRIVER_QUEUE.dequeue());
-                        match message {
-                            None => {
-                                info!("Driver task yields");
-                                unsafe {
-                                    EMMC_DRIVER_ANY = false;
-                                }
-                                reschedule();
-                                info!("Driver back to work");
-                            },
-                            Some(EmmcDriverMessage::Read {block_index: block_index, address: address }) => {
-                                if current.is_some() {
-                                    pending_requests.enqueue(EmmcDriverMessage::Read {block_index: block_index, address: address });
-                                }
-                                else {
-                                    current = Some(EmmcDriverMessage::Read {block_index: block_index, address: address });
+                        if interupt_received {
+                            match slot.wait_for_transfer_complete() {
+                                Ok(_) => { 
+                                    info!("DMA completed");
+                                    match current {
+                                        Some(EmmcOp::Read { block_index: _, address: _} ) => {
+                                            unsafe {
+                                                let data_ptr = buff as *mut u8;
+                                                let data = core::slice::from_raw_parts(data_ptr, 512);
+                                                info!("READ: {:x?}", data);
+                                            }
+                                        },
+                                        _ => {},
+                                    }
+                                    current = None;
+                                    interupt_received = false;
+                                },
+                                Err(err) => error!("DMA error: {}", err.into_bits()),
+                            }
+                        }
 
-                                    let block_size = BlockSize::new()
-                                        .with_transfer_block_size(0x0200)
-                                        .with_host_sdma_buffer_boundary(0b111);
-                                    let transfer_mode = TransferMode::new()
-                                        .with_dma_enable(true)
-                                        .with_block_count_enable(false)
-                                        .with_auto_cmd12_enable(false)
-                                        .with_data_transfer_direction_select(TransferingDirection::Read)
-                                        .with_multi_block_select(false);
-                                    let command = R1_COMMAND_PRESET
-                                        .with_data_present(true)
-                                        .with_command_type(CommandType::Normal)
-                                        .with_index(17);
-                                    
-                                    let res = slot.issue_dma_command(
-                                        buff,
-                                        block_size,
-                                        1, 
-                                        block_index,
-                                        transfer_mode,
-                                        command
-                                        );
-
-                                    match res {
-                                        Ok(_) => info!("Reading from slot {}", slot.slot_num),
+                        if current.is_none() {
+                            let op = critical_section::with(|_| EMMC_DRIVER_QUEUE.dequeue());
+                            match op {
+                                None => {
+                                    info!("Driver task yields");
+                                    unsafe {
+                                        EMMC_DRIVER_ANY = false;
+                                    }
+                                    reschedule();
+                                    info!("Driver back to work");
+                                },
+                                Some(op) => {
+                                    current = Some(op);
+                                    match serve_op(slot, op, buff) {
+                                        Ok(_) => {},
                                         Err(CommandError::IssuanceTimeout) => {
                                             error!("Slot {} issuance timeout", slot.slot_num);
                                             current = None;
@@ -255,29 +305,16 @@ pub extern "C" fn driver_task() -> ! {
                                             current = None;
                                         },
                                     }
-                                }
-                            },
-                            Some(EmmcDriverMessage::Interrupt) => {
-                                match slot.wait_for_transfer_complete() {
-                                    Ok(_) => { 
-                                        info!("DMA completed");
-                                        match current {
-                                            Some(EmmcDriverMessage::Read { block_index: _, address: _} ) => {
-                                                unsafe {
-                                                    let data_ptr = buff as *mut u8;
-                                                    let data = core::slice::from_raw_parts(data_ptr, 512);
-                                                    info!("READ: {:x?}", data);
-                                                }
-                                            },
-                                            _ => {},
-                                        }
-                                    },
-                                    Err(err) => error!("DMA error: {}", err.into_bits()),
-                                }
-                                current = None;
-                            },
-                            Some(_) => {
-                            },
+                                },
+                            }
+                        }
+                        else {
+                            info!("Driver task yields");
+                            unsafe {
+                                EMMC_DRIVER_ANY = false;
+                            }
+                            reschedule();
+                            info!("Driver back to work");
                         }
                     }
                 },
