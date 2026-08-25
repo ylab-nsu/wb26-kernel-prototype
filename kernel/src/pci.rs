@@ -91,7 +91,7 @@ pub fn pci_enable_bus_mastering(bus: u8, dev: u8, func: u8) {
         dev,
         func,
         PCI_COMMAND_REG,
-        command & !PCI_COMMAND_BUS_MASTER,
+        command | PCI_COMMAND_BUS_MASTER,
     );
 }
 
