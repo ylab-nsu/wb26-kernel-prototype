@@ -2,6 +2,10 @@ use crate::arch::{PlatformDuration, PlatformInstant};
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::sync::atomic::AtomicBool;
+use core::fmt::Display;
+use core::ops::{Add, AddAssign};
+use core::time::Duration;
+use crate::sync::{Mutex, LazyLock};
 
 pub struct TimerCallbackContext {
     pub handle_time: PlatformInstant,
@@ -98,3 +102,69 @@ impl TimerHandle {
         self.to_stop.load(core::sync::atomic::Ordering::Acquire)
     }
 }
+
+pub struct BenchRun {
+    cycles: u64,
+    time: Duration,
+    count: u64,
+    lattency: Duration,
+    lattency_count: u64,
+}
+
+impl BenchRun {
+    pub fn new(cycles: u64, time: Duration) -> Self {
+        Self {
+            cycles,
+            time,
+            count: 1,
+            lattency: Duration::from_micros(0),
+            lattency_count: 0,
+        }
+    }
+
+    pub fn average(&mut self) -> BenchRun {
+        BenchRun {
+            cycles: self.cycles / self.count,
+            time: self.time / self.count as u32,
+            count: self.count,
+            lattency: self.lattency / self.lattency_count as u32,
+            lattency_count: self.lattency_count,
+        }
+    }
+
+    pub fn record_lattency(&mut self, lattency: Duration) {
+        self.lattency += lattency;
+        self.lattency_count += 1;
+    }
+}
+
+impl Display for BenchRun {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "Cycles: {}, Time: {} ms, across {} interrupts; lattency {} ms across {} records",
+            self.cycles,
+            self.time.as_millis(),
+            self.count,
+            self.lattency.as_millis(),
+            self.lattency_count
+        )
+    }
+}
+
+impl AddAssign<BenchRun> for BenchRun {
+
+    fn add_assign(&mut self, rhs: BenchRun) {
+        self.cycles += rhs.cycles;
+        self.time += rhs.time;
+        self.count += rhs.count;
+    }
+}
+
+pub static BENCH_RUNS: Mutex<BenchRun> = Mutex::new(BenchRun {
+    cycles: 0,
+    time: Duration::from_micros(0),
+    count: 0,
+    lattency: Duration::from_micros(0),
+    lattency_count: 0,
+});

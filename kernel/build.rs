@@ -52,22 +52,6 @@ fn main() {
         .join(format!("lib{}.a", USER_PACKAGE.replace("-", "_")));
     println!("cargo:rerun-if-changed={}", user_elf.to_str().unwrap());
 
-    // let status = Command::new(objcopy)
-    //     .args(&[
-    //         "--redefine-sym", "_RNvCshXwFllX56pT_7___rustc17rust_begin_unwind=user_rust_begin_unwind",
-    //         // "--redefine-sym", "rust_panic=__user_rust_panic",
-    //         user_elf.to_str().unwrap(),
-    //         // user_elf.with_added_extension("_changed").to_str().unwrap(),
-    //     ])
-    //     .status();
-    // let status = Command::new(objcopy)
-    //     .args(&[
-    //         "--prefix-symbols",
-    //         "__user_",
-    //         user_elf.to_str().unwrap(),
-    //         user_elf.to_str().unwrap(),
-    //     ])
-    //     .status();
     let status = Command::new(objcopy)
         .args(&[
             "--remove-section=.eh_frame",

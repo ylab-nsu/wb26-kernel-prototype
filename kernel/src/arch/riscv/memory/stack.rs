@@ -5,6 +5,7 @@ use crate::arch::riscv::{memory::layout::KERNEL_LAYOUT, vm::PAGE_SIZE};
 const STACK_SIZE: usize = 256 * PAGE_SIZE; // 1 MB
 
 #[link_section = ".stack"]
+#[used]
 static STACK_MEM: [MaybeUninit<u8>; STACK_SIZE] = [MaybeUninit::uninit(); STACK_SIZE];
 
 fn read_sp() -> usize {
