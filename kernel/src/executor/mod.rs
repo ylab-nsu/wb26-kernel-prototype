@@ -1,8 +1,9 @@
-use core::{future::Future, pin::Pin, task::{Context, Poll, RawWaker, RawWakerVTable, Waker}};
+use core::{future::Future, pin::Pin, sync::atomic::AtomicUsize, task::{Context, Poll, RawWaker, RawWakerVTable, Waker}};
 
-use alloc::{boxed::Box, collections::VecDeque};
+use alloc::{boxed::Box, collections::VecDeque, sync::Arc, task::Wake};
 
 use crate::{executor::futures::{oneshot::yield_now, sleep::sleep}, sync::Mutex};
+use riscv::_export::critical_section;
 
 pub mod futures;
 
@@ -39,17 +40,52 @@ async fn test() {
 // }
 
 struct Task {
-    future: Pin<Box<dyn Future<Output = ()> + Send>>,
+    future: Mutex<Option<Pin<Box<dyn Future<Output = ()> + Send>>>>
 }
 
-static TASKS: Mutex<VecDeque<Task>> = Mutex::new(VecDeque::new());
+impl Task {
+    fn schedule(self: Arc<Self>) {
+        critical_section::with(|_| {
+            WAKED_TASKS.lock().push_back(self)
+        })
+    }
+
+    fn poll(self: &Arc<Self>) {
+        let waker: Waker = self.clone().into();
+        let mut cx = Context::from_waker(&waker);
+
+        let mut future = self.future.lock();
+        if let Some(mfuture) = future.as_mut() {
+            if mfuture.as_mut().poll(&mut cx).is_ready() {
+                *future = None;
+                info!("Task finished");
+                ACTIVE_TASKS.fetch_sub(1, core::sync::atomic::Ordering::AcqRel);
+            }
+        }
+    }
+}
+
+impl Wake for Task {
+    fn wake(self: Arc<Self>) {
+        self.schedule();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.clone().schedule();
+    }
+}
+
+static WAKED_TASKS: Mutex<VecDeque<Arc<Task>>> = Mutex::new(VecDeque::new());
+static ACTIVE_TASKS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn spawn(future: impl Future<Output = ()> + Send + 'static) {
-    let mut tasks = TASKS.lock();
-
-    tasks.push_front(Task {
-        future: Box::pin(future),
+    let task = Arc::new(Task {
+        future: Mutex::new(Some(Box::pin(future))),
     });
+
+    ACTIVE_TASKS.fetch_add(1, core::sync::atomic::Ordering::AcqRel);
+
+    task.schedule();
 }
 
 pub extern "C" fn executor() -> ! {
@@ -65,32 +101,23 @@ pub extern "C" fn executor() -> ! {
         debug!("Finish2");
     });
 
-    loop {
+    let mut run = true;
+    while run {
         // heapless::
-        let mut tasks = TASKS.lock();
+        critical_section::with(|_| {
+            let task = WAKED_TASKS.lock().pop_front();
 
-        let waker = Waker::noop();
-        let mut cx = Context::from_waker(waker);
-
-        if let Some(mut task) = tasks.pop_back() {
-            match task.future.as_mut().poll(&mut cx) {
-                Poll::Ready(_) => {
-                    debug!("Ready");
-                    // break;
-                }
-                Poll::Pending => {
-                    // debug!("Not ready");
-                    tasks.push_front(task);
-                }
+            if let Some(task) = task {
+                task.poll();
+            } else if ACTIVE_TASKS.load(core::sync::atomic::Ordering::Acquire) == 0 {
+                info!("No tasks left");
+                run = false;
             }
-        } else {
-            debug!("Finish exec");
-            break;
-        }
+        })
     }
 
     loop {
-
+        
     }
 }
 

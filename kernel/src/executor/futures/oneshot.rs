@@ -1,4 +1,8 @@
-use core::{future::Future, pin::Pin, task::{Context, Poll}};
+use core::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 struct OneshotFuture {
     complete: bool,
@@ -12,6 +16,7 @@ impl Future for OneshotFuture {
             Poll::Ready(())
         } else {
             self.get_mut().complete = true;
+            cx.waker().wake_by_ref();
             Poll::Pending
         }
     }

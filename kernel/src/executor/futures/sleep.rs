@@ -9,11 +9,13 @@ use crate::arch::{
     traits::{TargetInstant, TargetTimerQueue},
     PlatformDuration, PlatformInstant, TimerQueue,
 };
-use crate::timers::TimerCallback;
+use crate::timers::{TimerCallback, TimerHandle};
+use alloc::sync::Weak;
 
 struct SleepFuture {
     target_time: PlatformInstant,
     is_registered: bool,
+    timer_handle: Option<Weak<TimerHandle>>,
 }
 
 impl SleepFuture {
@@ -21,6 +23,7 @@ impl SleepFuture {
         SleepFuture {
             target_time: target_time,
             is_registered: false,
+            timer_handle: None,
         }
     }
 }
@@ -37,14 +40,23 @@ impl Future for SleepFuture {
             self.is_registered = true;
             let waker = cx.waker().clone();
 
-            TimerQueue::add_timer(
+            let handle = TimerQueue::add_timer(
                 self.target_time,
                 TimerCallback::one_shot(move |_| {
                     waker.wake();
                 }),
             );
+            self.timer_handle = Some(handle);
         }
         Poll::Pending
+    }
+}
+
+impl Drop for SleepFuture {
+    fn drop(&mut self) {
+        if let Some(handle) = self.timer_handle.take() {
+            handle.upgrade().map(|handle| handle.stop());
+        }
     }
 }
 

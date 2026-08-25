@@ -80,7 +80,6 @@ fn fire_timers_ready_by_time(time: TickInstant) -> bool {
                     event.target_time = event.target_time + interval;
                     event.start_or_last_fire_time = time;
                     let _ = timers_to_reinsert.push(event);
-                    continue;
                 }
                 TimerCallback::OneShot { callback } => {
                     let ctx = TimerCallbackContext {
