@@ -23,6 +23,11 @@ const R1_COMMAND_PRESET: Command = Command::new()
     .with_crc_enable(true)
     .with_index_check_enable(true);
 
+const NO_RESPONSE_PRESET: Command = Command::new()
+    .with_response_type(ResponseType::NoResponse)
+    .with_crc_enable(false)
+    .with_index_check_enable(false);
+
 #[derive(Copy, Clone)]
 pub enum EmmcOp {
     Read {
@@ -215,9 +220,6 @@ impl Emmc {
 
     // Init card and retrieve info about it
     fn new(sdhci_slot: Slot) -> Result<Self, EmmcError> {
-        // TODO: Set default frequency
-        // TODO: Reset card
-
         // Enable all interrupts statuses and clear them
         sdhci_slot.clear_all_interrupt_statuses();
         sdhci_slot.enable_all_interrupt_statuses();               
@@ -230,6 +232,17 @@ impl Emmc {
             write_volatile(normal_interrupt_signal_enable, normal_interrupt_signal_enable_val);
         }
         sdhci_slot.enable_all_error_signals();
+
+        // Set 400KHz as default frequency
+        // TODO: Check for errors
+        sdhci_slot.set_sdclock_frequency(400);
+
+        let command = NO_RESPONSE_PRESET
+            .with_data_present(false)
+            .with_command_type(CommandType::Normal)
+            .with_index(0);
+        let argument = 0x0;
+        sdhci_slot.issue_non_dat_command(argument, command)?;
 
         let rca: u16 = 1;
         let slot_ocr = Self::slot_capabilities_to_ocr(&sdhci_slot);
