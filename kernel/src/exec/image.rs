@@ -10,6 +10,8 @@ use core::slice;
 
 use object::read::ReadRef;
 
+use crate::exec::ExecError;
+
 /// A file image backed by a fixed RAM range.
 ///
 /// No size bound is tracked: the image is assumed to be a well-formed file at
@@ -24,9 +26,16 @@ impl Image {
         Image { base }
     }
 
-    /// Physical address of the byte at file offset `offset`.
-    pub fn phys_addr(&self, offset: u64) -> u64 {
-        unsafe { self.base.add(offset as usize) as u64 }
+    /// Read `size` bytes from file offset `offset` directly into `dst`.
+    ///
+    /// RAM backing: a plain copy from the resident image. A future disk
+    /// backing would read straight into `dst` instead.
+    pub fn read_into(&self, offset: u64, dst: *mut u8, size: usize) -> Result<(), ExecError> {
+        let src = unsafe { self.base.add(offset as usize) };
+        unsafe {
+            core::ptr::copy_nonoverlapping(src, dst, size);
+        }
+        Ok(())
     }
 }
 

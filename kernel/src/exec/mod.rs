@@ -15,13 +15,16 @@ pub mod test;
 
 use crate::allocator::AllocatorError;
 
-pub const fn align_down(x: u64, a: u64) -> u64 {
-    x & !(a - 1)
+pub const fn align_down(value: u64, align: u64) -> u64 {
+    value & !(align - 1)
 }
 
-pub const fn align_up(x: u64, a: u64) -> u64 {
-    align_down(x + a - 1, a)
+pub const fn align_up(value: u64, align: u64) -> u64 {
+    align_down(value + align - 1, align)
 }
+
+pub const USER_STACK_SIZE: u64 = 16 * 4096;
+pub const USER_STACK_TOP: u64 = 0x8C00_0000;
 
 // errno values returned to user space (see `linux errno.h`).
 const ENOEXEC: i32 = 8;

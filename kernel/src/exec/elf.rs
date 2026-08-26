@@ -1,44 +1,46 @@
 //! ELF64 image loading into a fresh address space.
 //!
-//! Naming follows Linux `fs/binfmt_elf.c`: `elf_load` is the binfmt entry for
-//! one image, `load_elf_phdrs` fetches the program-header table, `elf_map`
-//! maps a single `PT_LOAD` (file part + bss part).
+//! Three phases, mirroring Linux `fs/binfmt_elf.c`:
+//! - [`read_and_validate`] parses and validates the ELF header and the
+//!   program-header table (the file is read exactly twice),
+//! - [`load`] maps the kernel half, the user stack and every `PT_LOAD` segment
+//!   into a fresh address space, producing a [`UserProgram`],
+//! - [`run_elf`] is the public entry: it chains both phases and spawns the
+//!   program via `spawn_user_program`.
 //!
-//! Phase-1 scope: static `ET_EXEC`, no `PT_INTERP`/`ET_DYN` yet (rejected with
+//! Scope: static `ET_EXEC`, no `PT_INTERP`/`ET_DYN` yet (rejected with
 //! dedicated errors). Mapping is zero-copy: the file already sits in RAM, so a
 //! `PT_LOAD` maps the file's physical pages directly (no copy, no
-//! `write_user`). `PT_GNU_STACK`/`PT_PHDR` are analysed for later phases but
-//! do not drive any action yet.
+//! `write_user`). Non-`PT_LOAD` program headers (`PHDR`, `GNU_STACK`,
+//! `RISCV_ATTRIBUTES`, ...) are ignored.
 
 use object::read::elf::{FileHeader, ProgramHeader};
 use object::{elf, LittleEndian};
 
-use crate::arch::traits::{TargetAddressSpace, TargetPhysicalAllocator};
+use crate::arch::traits::{TargetAddressSpace, TargetPhysicalAllocation, TargetPhysicalAllocator};
 use crate::arch::{AddressSpace, KERNEL_LAYOUT, PhysicalAddress, PhysicalAllocator, VirtualAddress};
 use crate::exec::image::Image;
-use crate::exec::{align_down, align_up, ExecError};
+use crate::exec::{align_down, align_up, ExecError, USER_STACK_SIZE, USER_STACK_TOP};
+use crate::threading::init::{spawn_user_program, UserProgram};
 use crate::vm::{MappingFlags, MappingPermissions};
 
 type Endian = LittleEndian;type Elf64 = elf::FileHeader64<Endian>;
 type Phdr = elf::ProgramHeader64<Endian>;
 
-/// Result of mapping one ELF image.
-pub struct LoadInfo {
-    pub entry: u64,
+/// Parsed and validated ELF metadata, produced by [`read_and_validate`] and
+/// consumed by [`load`]. `phdrs` points into the image RAM and is reused so the
+/// file is read exactly twice: the ELF header, then the program-header table.
+struct ExecMeta {
+    entry: u64,
+    phdrs: &'static [Phdr],
     /// First free address after the highest segment (future `brk`).
-    pub brk: u64,
-    pub stack_exec: bool,
-    /// File offset of the phdr table (for a later `AT_PHDR`).
-    pub phoff: u64,
-    pub phent: u64,
-    pub phnum: u64,
+    brk: u64,
 }
 
 /// Read-only facts collected in the analysis pass.
-struct Analysis {
+struct PhdrsAnalysis {
     min_vaddr: u64,
     max_vaddr: u64,
-    stack_exec: bool,
     load_count: u32,
 }
 
@@ -51,7 +53,7 @@ fn prot_from(p_flags: u32) -> MappingPermissions {
 }
 
 /// Validate the ELF header. Any failure is an ENOEXEC analogue.
-fn validate_ehdr(hdr: &Elf64, endian: Endian) -> Result<(), ExecError> {
+fn validate_elf_hdr(hdr: &Elf64, endian: Endian) -> Result<(), ExecError> {
     if hdr.e_ident.magic != elf::ELFMAG {
         return Err(ExecError::BadMagic);
     }
@@ -80,46 +82,68 @@ fn validate_ehdr(hdr: &Elf64, endian: Endian) -> Result<(), ExecError> {
 }
 
 /// Fetch the program-header table from the image.
-fn load_elf_phdrs(
+fn load_program_hdrs(
     image: &mut Image,
-    elf_ex: &Elf64,
+    elf_hdr: &Elf64,
     endian: Endian,
 ) -> Result<&'static [Phdr], ExecError> {
-    elf_ex
+    elf_hdr
         .program_headers(endian, *image)
         .map_err(|_| ExecError::ImageFault)
 }
 
+fn validate_program_hdr(program_hdr: &Phdr, endian: Endian) -> Result<(), ExecError> {
+    let file_size = program_hdr.p_filesz(endian);
+    let mem_size = program_hdr.p_memsz(endian);
+
+    if mem_size < file_size {
+        return Err(ExecError::MemszLtFilesz);
+    }
+
+    // Linker invariant required by page-granular mapping.
+    if program_hdr.p_vaddr(endian) % 4096 != program_hdr.p_offset(endian) % 4096 {
+        return Err(ExecError::MisalignedSegment);
+    }
+
+    Ok(())
+}
+
+fn vaddr_alloc_bounds(program_hdr: &Phdr, endian: Endian) -> (u64, u64) {
+    let vaddr_alloc_start = align_down(
+        program_hdr.p_vaddr(endian), 
+        4096
+    );
+    let vaddr_alloc_end = align_up(
+        program_hdr.p_vaddr(endian) + program_hdr.p_memsz(endian), 
+        4096
+    );
+    
+    (vaddr_alloc_start, vaddr_alloc_end)
+}
+
 /// Single analysis pass over the program headers.
-fn analyze_phdrs(phdrs: &[Phdr], endian: Endian) -> Result<Analysis, ExecError> {
-    let mut analysis = Analysis {
+fn analyze_program_hdrs(program_hdrs: &[Phdr], endian: Endian) -> Result<PhdrsAnalysis, ExecError> {
+    let mut analysis = PhdrsAnalysis {
         min_vaddr: u64::MAX,
         max_vaddr: 0,
-        stack_exec: false,
         load_count: 0,
     };
 
-    for phdr in phdrs {
-        let p_type = phdr.p_type(endian);
-        if p_type == elf::PT_LOAD {
-            let file_size = phdr.p_filesz(endian);
-            let mem_size = phdr.p_memsz(endian);
-            if mem_size < file_size {
-                return Err(ExecError::MemszLtFilesz);
+    for program_hdr in program_hdrs {
+        match program_hdr.p_type(endian) {
+            elf::PT_LOAD => {
+                validate_program_hdr(program_hdr, endian)?;
+                let (vaddr_alloc_start, vaddr_alloc_end) = vaddr_alloc_bounds(program_hdr, endian);
+                analysis.min_vaddr = analysis.min_vaddr.min(vaddr_alloc_start);
+                analysis.max_vaddr = analysis.max_vaddr.max(vaddr_alloc_end);
+                analysis.load_count += 1;
             }
-            // Linker invariant required by page-granular mapping.
-            if phdr.p_vaddr(endian) % 4096 != phdr.p_offset(endian) % 4096 {
-                return Err(ExecError::MisalignedSegment);
+            elf::PT_INTERP => {
+                return Err(ExecError::InterpUnsupported);
             }
-            analysis.min_vaddr = analysis.min_vaddr.min(align_down(phdr.p_vaddr(endian), 4096));
-            analysis.max_vaddr = analysis
-                .max_vaddr
-                .max(align_up(phdr.p_vaddr(endian) + mem_size, 4096));
-            analysis.load_count += 1;
-        } else if p_type == elf::PT_INTERP {
-            return Err(ExecError::InterpUnsupported);
-        } else if p_type == elf::PT_GNU_STACK {
-            analysis.stack_exec = phdr.p_flags(endian).0 & elf::PF_X.0 != 0;
+            // PHDR, GNU_STACK, RISCV_ATTRIBUTES, GNU_RELRO, ... are ignored for
+            // a static ET_EXEC (only PT_INTERP is unsupported).
+            _ => {}
         }
     }
 
@@ -129,68 +153,55 @@ fn analyze_phdrs(phdrs: &[Phdr], endian: Endian) -> Result<Analysis, ExecError> 
     Ok(analysis)
 }
 
-/// Map one `PT_LOAD` segment, zero-copy from the RAM-resident file image.
-///
-/// The file part maps the file's own physical pages directly into the address
-/// space (the bytes are already in RAM). The bss part (`memsz > filesz`) gets
-/// fresh zeroed anonymous pages.
-fn elf_map(
+/// Load one `PT_LOAD` segment into a freshly allocated region: copy the file
+/// bytes, zero-fill the bss tail, then map the region into the address space.
+fn map_segment(
     image: &mut Image,
     address_space: &mut AddressSpace,
     phdr: &Phdr,
     endian: Endian,
-    load_bias: u64,
 ) -> Result<(), ExecError> {
-    let vaddr = load_bias + phdr.p_vaddr(endian);
-    let file_offset = phdr.p_offset(endian);
-    let file_size = phdr.p_filesz(endian);
-    let mem_size = phdr.p_memsz(endian);
+    let vaddr = phdr.p_vaddr(endian);
+    let filesz = phdr.p_filesz(endian);
+    let memsz = phdr.p_memsz(endian);
+    if memsz == 0 {
+        return Ok(());
+    }
     let perms = prot_from(phdr.p_flags(endian).0);
 
-    let vstart = align_down(vaddr, 4096);
-    let page_offset = vaddr - vstart; // == file_offset % PAGE (checked in analyse)
+    let (vaddr_alloc_start, vaddr_alloc_end) = vaddr_alloc_bounds(phdr, endian);
 
-    // File-backed part: map the file's physical pages directly. Zero-copy —
-    // the bytes are already in RAM, so the segment is installed with its final
-    // permissions right away (there is no `protect` in the kernel VM API yet).
-    let file_map_len = align_up(page_offset + file_size, 4096);
-    if file_map_len > 0 {
-        let file_page_base = align_down(file_offset, 4096);
-        let phys_addr = image.phys_addr(file_page_base);
-        let phys = PhysicalAddress::try_from(phys_addr as usize)
-            .map_err(|_| ExecError::ImageFault)?;
-        let alloc = PhysicalAllocator::alloc_contiguous_at(phys, file_map_len as usize)?;
+    let alloc = PhysicalAllocator::alloc_contiguous(
+        (vaddr_alloc_end - vaddr_alloc_start) as usize
+    )?;
+    let phys_alloc_start = alloc.addr().into_bits() as usize;
+    let segment_offset = (vaddr - vaddr_alloc_start) as usize;
 
-        address_space.map(
-            VirtualAddress::try_from(vstart as usize).unwrap(),
-            alloc,
-            perms,
-            MappingFlags::new().with_user(true),
-        );
+    // Copy the file bytes once, read through the abstract image.
+    if filesz > 0 {
+        image.read_into(
+            phdr.p_offset(endian),
+            (phys_alloc_start + segment_offset) as *mut u8,
+            filesz as usize
+        )?;
     }
 
-    // bss: `mem_size > file_size`. Whole extra pages get their own zeroed
-    // anonymous mapping with the final permissions.
-    let bss_start = vaddr + file_size;
-    let bss_end = vaddr + mem_size;
-    let bss_page_start = align_up(bss_start, 4096);
-    let bss_page_end = align_up(bss_end, 4096);
-    if bss_page_start < bss_page_end {
-        let alloc = PhysicalAllocator::alloc_contiguous((bss_page_end - bss_page_start) as usize)?;
-        address_space.map(
-            VirtualAddress::try_from(bss_page_start as usize).unwrap(),
-            alloc,
-            perms,
-            MappingFlags::new().with_user(true),
-        );
+    // Zero only the bss remainder, leaving file bytes untouched.
+    if memsz > filesz {
+        unsafe {
+            core::ptr::write_bytes(
+                (phys_alloc_start + segment_offset + filesz as usize) as *mut u8,
+                0,
+                (memsz - filesz) as usize,
+            );
+        }
     }
 
-    info!(
-        "exec: segment {:#018x}..{:#018x} mapped (filesz={:#x} memsz={:#x})",
-        vaddr,
-        vaddr + mem_size,
-        file_size,
-        mem_size,
+    address_space.map(
+        VirtualAddress::try_from(vaddr_alloc_start as usize).unwrap(),
+        alloc,
+        perms,
+        MappingFlags::new().with_user(true),
     );
     Ok(())
 }
@@ -273,47 +284,70 @@ pub fn map_kernel_shared(address_space: &mut AddressSpace) -> Result<(), ExecErr
     Ok(())
 }
 
-/// Parse, validate and map an ELF image into `address_space`; summarise the
-/// result for a later stack builder.
-///
-/// `load_bias` is 0 for `ET_EXEC`; non-zero biases are the `ET_DYN`/PIE hook.
-pub fn elf_load(
-    image: &mut Image,
-    address_space: &mut AddressSpace,
-    load_bias: u64,
-) -> Result<LoadInfo, ExecError> {
+fn init_stack(address_space: &mut AddressSpace) {
+    let stack_alloc = PhysicalAllocator::alloc_contiguous(USER_STACK_SIZE as usize)
+        .expect("alloc stack");
+
+    address_space.map(
+        VirtualAddress::try_from(USER_STACK_TOP as usize).unwrap(),
+        stack_alloc,
+        MappingPermissions::rw(),
+        MappingFlags::new().with_user(true),
+    );
+}
+
+/// Phase 1: parse the ELF header and the program-header table and validate
+/// them. The file is read exactly twice (ELF header, then phdr table); the
+/// resulting [`ExecMeta`] is reused by [`load`] — no further reads.
+fn read_and_validate(image: &mut Image) -> Result<ExecMeta, ExecError> {
     let endian = LittleEndian;
 
-    let elf_ex = Elf64::parse(*image).map_err(|_| ExecError::BadMagic)?;
-    validate_ehdr(elf_ex, endian)?;
+    let elf_hdr = Elf64::parse(*image).map_err(|_| ExecError::BadMagic)?;
+    validate_elf_hdr(elf_hdr, endian)?;
 
-    let phdrs = load_elf_phdrs(image, elf_ex, endian)?;
-    let analysis = analyze_phdrs(phdrs, endian)?;
+    let phdrs = load_program_hdrs(image, elf_hdr, endian)?;
+    let analysis = analyze_program_hdrs(phdrs, endian)?;
+
     info!(
-        "exec: image span {:#018x}..{:#018x}, {} PT_LOAD segments",
+        "exec: image span {:x}..{:x}, {} PT_LOAD segments",
         analysis.min_vaddr,
         analysis.max_vaddr,
         analysis.load_count,
     );
 
-    let mut brk = 0u64;
-    for phdr in phdrs {
-        if phdr.p_type(endian) != elf::PT_LOAD {
-            continue;
+    Ok(ExecMeta {
+        entry: elf_hdr.e_entry.get(endian),
+        phdrs,
+        brk: analysis.max_vaddr,
+    })
+}
+
+/// Phase 2: create a fresh address space, map the kernel half, the user stack
+/// and every `PT_LOAD` segment. Produces a [`UserProgram`] ready to spawn.
+fn load(meta: &ExecMeta, image: &mut Image) -> Result<UserProgram, ExecError> {
+    let mut address_space = AddressSpace::new();
+
+    map_kernel_shared(&mut address_space)?;
+    init_stack(&mut address_space);
+
+    for phdr in meta.phdrs {
+        if phdr.p_type(LittleEndian) == elf::PT_LOAD {
+            map_segment(image, &mut address_space, phdr, LittleEndian)?;
         }
-        elf_map(image, address_space, phdr, endian, load_bias)?;
-        brk = brk.max(align_up(
-            load_bias + phdr.p_vaddr(endian) + phdr.p_memsz(endian),
-            4096,
-        ));
     }
 
-    Ok(LoadInfo {
-        entry: load_bias + elf_ex.e_entry.get(endian),
-        brk,
-        stack_exec: analysis.stack_exec,
-        phoff: elf_ex.e_phoff.get(endian),
-        phent: elf_ex.e_phentsize.get(endian) as u64,
-        phnum: elf_ex.e_phnum.get(endian) as u64,
+    Ok(UserProgram {
+        entry: meta.entry as usize,
+        sp: USER_STACK_TOP as usize,
+        address_space,
     })
+}
+
+/// Run an ELF image: read+validate, load into a fresh address space, spawn a
+/// user thread. Returns the spawned thread id.
+pub fn run_elf(image: &mut Image) -> Result<usize, ExecError> {
+    let meta = read_and_validate(image)?;
+    let program = load(&meta, image)?;
+    info!("exec: entry={:#018x} brk={:#018x}", meta.entry, meta.brk);
+    Ok(spawn_user_program(program))
 }

@@ -35,7 +35,7 @@ pub fn kernel_main(_ctx: BootContext) -> ! {
     info!("Starting kernel (kernel_main())");
 
     setup_threads();
-    crate::exec::test::run_elf();
+    crate::exec::test::test_run_elf();
     setup_reschedule_timer();
     unsafe {
         Platform::ei();
