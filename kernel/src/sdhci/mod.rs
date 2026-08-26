@@ -1,5 +1,7 @@
 pub mod cards;
+mod sdhci_command;
 
+use sdhci_command::*;
 use bitfield_struct::{ bitfield, bitenum };
 use core::ptr::{read_volatile, write_volatile};
 use crate::pci::{ pci_enable_device, pci_enable_interrupt, pci_enable_bus_mastering, PCI_BAR0_REG };
@@ -7,7 +9,7 @@ use crate::arch::traits::TargetPciBus;
 use crate::arch::PciBus;
 
 #[bitfield(u16)]
-struct BlockSize {
+struct SdhciBlockSize {
     #[bits(12)]
     transfer_block_size: u16,
     #[bits(3)]
@@ -19,20 +21,20 @@ struct BlockSize {
 #[derive(Debug)]
 #[repr(u8)]
 #[bitenum(all = false)]
-enum TransferingDirection {
+enum SdhciTransferingDirection {
     #[fallback]
     Write = 0,
     Read = 1,
 }
 
 #[bitfield(u16)]
-struct TransferMode {
+struct SdhciTransferMode {
     dma_enable: bool,
     block_count_enable: bool,
     auto_cmd12_enable: bool,
     __: bool,
     #[bits(1)]
-    data_transfer_direction_select: TransferingDirection,
+    data_transfer_direction_select: SdhciTransferingDirection,
     multi_block_select: bool,
 
     #[bits(10)]
@@ -42,7 +44,7 @@ struct TransferMode {
 #[derive(Debug)]
 #[repr(u8)]
 #[bitenum(all = false)]
-enum ResponseType {
+enum SdhciResponseType {
     #[fallback]
     NoResponse = 0,
     ResponseLen136 = 1,
@@ -53,7 +55,7 @@ enum ResponseType {
 #[derive(Debug)]
 #[repr(u8)]
 #[bitenum(all = false)]
-enum CommandType {
+enum SdhciCommandType {
     #[fallback]
     Normal = 0,
     Suspend = 1,
@@ -62,16 +64,16 @@ enum CommandType {
 }
 
 #[bitfield(u16)]
-struct Command {
+struct SdhciCommandDesc {
     #[bits(2)]
-    response_type: ResponseType,
+    response_type: SdhciResponseType,
     #[bits(1)]
     __: usize,
     crc_enable: bool,
     index_check_enable: bool,
     data_present: bool,
     #[bits(2)]
-    command_type: CommandType,
+    command_type: SdhciCommandType,
     #[bits(6)]
     index: u8,
     #[bits(2)]
@@ -79,7 +81,7 @@ struct Command {
 }
 
 #[bitfield(u32)]
-struct PresentState {
+struct SdhciPresentState {
     command_inhibit_cmd: bool,
     command_inhibit_dat: bool,
     dat_line_active: bool,
@@ -107,7 +109,7 @@ struct PresentState {
 #[derive(Debug)]
 #[repr(u8)]
 #[bitenum(all = false)]
-enum TransferWidth {
+enum SdhciTransferWidth {
     #[fallback]
     OneBit = 0,
     FourBit = 1,
@@ -116,7 +118,7 @@ enum TransferWidth {
 #[derive(Debug)]
 #[repr(u8)]
 #[bitenum(all = false)]
-enum DmaMode {
+enum SdhciDmaMode {
     #[fallback]
     SDMA = 0,
     ADMA2_32 = 2,
@@ -126,31 +128,31 @@ enum DmaMode {
 #[derive(Debug)]
 #[repr(u8)]
 #[bitenum(all = false)]
-enum CardDetection {
+enum SdhciCardDetection {
     #[fallback]
     Nornal = 0,
     Test = 1,
 }
 
 #[bitfield(u8)]
-struct HostControl {
+struct SdhciHostControl {
     led_enable: bool,
     #[bits(1)]
-    data_transfer_width: TransferWidth,
+    data_transfer_width: SdhciTransferWidth,
     high_speed_enable: bool,
     #[bits(2)]
-    dma_mode: DmaMode,
+    dma_mode: SdhciDmaMode,
     #[bits(1)]
     __: usize,
     card_detect_test_level: bool,
     #[bits(1)]
-    card_detect_signal: CardDetection // NOTE: Disable interrupts before changing
+    card_detect_signal: SdhciCardDetection // NOTE: Disable interrupts before changing
 }
 
 #[derive(Debug)]
 #[repr(u8)]
 #[bitenum(all = false)]
-enum Voltage {
+enum SdhciOperatingVoltage {
     #[fallback]
     V1_8 = 5,
     V3_0 = 6,
@@ -158,16 +160,16 @@ enum Voltage {
 }
 
 #[bitfield(u8)]
-struct PowerControl {
+struct SdhciPowerControl {
     sd_bus_power: bool,
     #[bits(3)]
-    voltage: Voltage,
+    voltage: SdhciOperatingVoltage,
     #[bits(4)]
     __: usize,
 }
 
 #[bitfield(u8)]
-struct BlockGapControl {
+struct SdhciBlockGapControl {
     stop_at_block_gap_req: bool,
     continue_request: bool,
     read_wait_control: bool,
@@ -177,7 +179,7 @@ struct BlockGapControl {
 }
 
 #[bitfield(u8)]
-struct WakeupControl {
+struct SdhciWakeupControl {
     on_card_interrupt: bool,
     on_card_insertion: bool,
     on_card_removal: bool,
@@ -186,7 +188,7 @@ struct WakeupControl {
 }
 
 #[bitfield(u16)]
-struct ClockControl {
+struct SdhciClockControl {
     internal_clock_enable: bool,
     internal_clock_stable: bool,
     sd_clock_enable: bool,
@@ -196,7 +198,7 @@ struct ClockControl {
 }
 
 #[bitfield(u8)]
-struct SoftResetControl {
+struct SdhciSoftResetControl {
     for_all: bool,
     for_cmd_line: bool,
     for_dat_line: bool,
@@ -205,7 +207,7 @@ struct SoftResetControl {
 }
 
 #[bitfield(u16)]
-struct NormalInterruptStatus {
+struct SdhciNormalInterruptStatus {
     command_complete: bool,
     transfer_complete: bool,
     block_gap_event: bool,
@@ -221,7 +223,7 @@ struct NormalInterruptStatus {
 }
 
 #[bitfield(u16)]
-struct ErrorInterruptStatus {
+struct SdhciErrorInterruptStatus {
     command_timeout: bool,
     command_crc: bool,
     command_end_bit: bool,
@@ -239,7 +241,7 @@ struct ErrorInterruptStatus {
 }
 
 #[bitfield(u16)]
-struct NormalInterruptStatusEnable {
+struct SdhciNormalInterruptStatusEnable {
     command_complete: bool,
     transfer_complete: bool,
     block_gap_event: bool,
@@ -254,7 +256,7 @@ struct NormalInterruptStatusEnable {
 }
 
 #[bitfield(u16)]
-struct ErrorInterruptStatusEnable {
+struct SdhciErrorInterruptStatusEnable {
     command_timeout: bool,
     command_crc: bool,
     command_end_bit: bool,
@@ -272,7 +274,7 @@ struct ErrorInterruptStatusEnable {
 }
 
 #[bitfield(u16)]
-struct NormalInterruptSignalEnable {
+struct SdhciNormalInterruptSignalEnable {
     command_complete: bool,
     transfer_complete: bool,
     block_gap_event: bool,
@@ -287,7 +289,7 @@ struct NormalInterruptSignalEnable {
 }
 
 #[bitfield(u16)]
-struct ErrorInterruptSignalEnable {
+struct SdhciErrorInterruptSignalEnable {
     command_timeout: bool,
     command_crc: bool,
     command_end_bit: bool,
@@ -305,7 +307,7 @@ struct ErrorInterruptSignalEnable {
 }
 
 #[bitfield(u16)]
-struct AutoCmd12ErrorStatus {
+struct SdhciAutoCmd12ErrorStatus {
     not_executed: bool,
     timeout: bool,
     crc: bool,
@@ -321,7 +323,7 @@ struct AutoCmd12ErrorStatus {
 #[derive(Debug)]
 #[repr(u8)]
 #[bitenum(all = false)]
-enum TimeoutClockUnit {
+enum SdhciTimeoutClockUnit {
     #[fallback]
     KHz = 0,
     MHz= 1,
@@ -330,7 +332,7 @@ enum TimeoutClockUnit {
 #[derive(Debug)]
 #[repr(u8)]
 #[bitenum(all = false)]
-enum MaxBlockLength {
+enum SdhciMaxBlockLength {
     #[fallback]
     B512 = 0,
     B1024 = 1,
@@ -338,19 +340,19 @@ enum MaxBlockLength {
 }
 
 #[bitfield(u64)]
-struct Capabilities {
+struct SdhciCapabilities {
     #[bits(6)]
     timeout_clock_freq: u8,
     #[bits(1)]
     __: usize,
     #[bits(1)]
-    timeout_clock_unit: TimeoutClockUnit,
+    timeout_clock_unit: SdhciTimeoutClockUnit,
     #[bits(6)]
     base_clock_freq: u8,
     #[bits(2)]
     __: usize,
     #[bits(2)]
-    max_block_length: MaxBlockLength,
+    max_block_length: SdhciMaxBlockLength,
     #[bits(1)]
     __: usize,
     adma2_support: bool,
@@ -371,7 +373,7 @@ struct Capabilities {
 
 // NOTE: Actual max current is (max_currenr_n_mV * 4)mA
 #[bitfield(u64)]
-struct MaximumCurrentCapabilities {
+struct SdhciMaximumCurrentCapabilities {
     max_current_3_3_v: u8,
     max_current_3_0_v: u8,
     max_current_1_8_v: u8,
@@ -380,19 +382,19 @@ struct MaximumCurrentCapabilities {
 }
 
 #[bitfield(u16)]
-struct SlotInterruptStatus {
+struct SdhciSlotInterruptStatus {
     per_slot_interrupt_signal: u8,
     __: u8,
 }
 
 #[bitfield(u16)]
-struct HostControllerVersion {
+struct SdhciVersion {
     specification_version: u8,
     vendor_version: u8,
 }
 
 #[bitfield(u16)]
-struct ForceEventForErrorInterrupt {
+struct SdhciForceEventForErrorInterrupt {
     command_timeout: bool,
     command_crc: bool,
     command_end_bit: bool,
@@ -410,7 +412,7 @@ struct ForceEventForErrorInterrupt {
 }
 
 #[bitfield(u16)]
-struct ForceEventForCmd12Error {
+struct SdhciForceEventForCmd12Error {
     not_executed: bool,
     timeout: bool,
     crc: bool,
@@ -426,7 +428,7 @@ struct ForceEventForCmd12Error {
 #[derive(Debug)]
 #[repr(u8)]
 #[bitenum(all = false)]
-enum AdmaErrorState {
+enum SdhciAdmaErrorState {
     #[fallback]
     StStop = 0,
     StFds = 1,
@@ -434,58 +436,58 @@ enum AdmaErrorState {
 }
 
 #[bitfield(u8)]
-struct AdmaErrorStatus {
+struct SdhciAdmaErrorStatus {
     #[bits(2)]
-    adma_error_state: AdmaErrorState,
+    adma_error_state: SdhciAdmaErrorState,
     adma_length_mismatch: bool,
     #[bits(5)]
     __: usize,
 }
 
 #[repr(C, packed(1))]
-struct SlotRegisters {
+struct SdhciSlotRegisters {
     sdma_address: u32,
-    block_size: BlockSize,
+    block_size: SdhciBlockSize,
     block_count: u16,
     argument: u32,
-    transfer_mode: TransferMode,
-    command: Command,
+    transfer_mode: SdhciTransferMode,
+    command: SdhciCommandDesc,
     response: [u32; 4],
     buffer_data_port: u32,
-    present_state: PresentState,
-    host_control: HostControl,
-    power_control: PowerControl,
-    block_gap_control: BlockGapControl,
-    wakeup_control: WakeupControl,
-    clock_control: ClockControl,
+    present_state: SdhciPresentState,
+    host_control: SdhciHostControl,
+    power_control: SdhciPowerControl,
+    block_gap_control: SdhciBlockGapControl,
+    wakeup_control: SdhciWakeupControl,
+    clock_control: SdhciClockControl,
     timeout_control: u8, // NOTE: Refer to spec
-    soft_reset_control: SoftResetControl,
-    normal_interrupt_status: NormalInterruptStatus,
-    error_interrupt_status: ErrorInterruptStatus,
-    normal_interrupt_status_enable: NormalInterruptStatusEnable,
-    error_interrupt_status_enable: ErrorInterruptStatusEnable,
-    normal_interrupt_signal_enable: NormalInterruptSignalEnable,
-    error_interrupt_signal_enable: ErrorInterruptSignalEnable,
-    auto_cmd12_error_status: AutoCmd12ErrorStatus,
+    soft_reset_control: SdhciSoftResetControl,
+    normal_interrupt_status: SdhciNormalInterruptStatus,
+    error_interrupt_status: SdhciErrorInterruptStatus,
+    normal_interrupt_status_enable: SdhciNormalInterruptStatusEnable,
+    error_interrupt_status_enable: SdhciErrorInterruptStatusEnable,
+    normal_interrupt_signal_enable: SdhciNormalInterruptSignalEnable,
+    error_interrupt_signal_enable: SdhciErrorInterruptSignalEnable,
+    auto_cmd12_error_status: SdhciAutoCmd12ErrorStatus,
     __1: u16,
-    capabilities: Capabilities,
-    maximum_current_capabilities: MaximumCurrentCapabilities,
-    force_event_for_cmd12_error: ForceEventForCmd12Error,
-    force_event_for_error_interrupt: ForceEventForErrorInterrupt,
-    adma_error_status: AdmaErrorStatus,
+    capabilities: SdhciCapabilities,
+    maximum_current_capabilities: SdhciMaximumCurrentCapabilities,
+    force_event_for_cmd12_error: SdhciForceEventForCmd12Error,
+    force_event_for_error_interrupt: SdhciForceEventForErrorInterrupt,
+    adma_error_status: SdhciAdmaErrorStatus,
     __2: u8,
     __3: u16,
     adma_address: u64,
     __4: [u32; 39],
-    slot_interrupt_status: SlotInterruptStatus,
-    host_controller_version: HostControllerVersion,
+    slot_interrupt_status: SdhciSlotInterruptStatus,
+    host_controller_version: SdhciVersion,
 }
 
 // Bus-specific data about device attached to it
 #[derive(Copy, Clone)]
 struct SdhciSlot {
     slot_num: u8,
-    regs: *mut SlotRegisters,
+    regs: *mut SdhciSlotRegisters,
 }
 
 // Slots amount is limited by PCI BARs amount, there are six of them
@@ -497,13 +499,13 @@ struct Sdhci {
 }
 
 #[derive(Debug)]
-enum CommandError {
-    IssuanceTimeout,
-    InterruptedError(ErrorInterruptStatus),
+enum SdhciError {
+    Timeout,
+    Interrupted(SdhciErrorInterruptStatus),
 }
 
 impl SdhciSlot {
-    fn new(slot_num: u8, regs: *mut SlotRegisters) -> Self {
+    fn new(slot_num: u8, regs: *mut SdhciSlotRegisters) -> Self {
         SdhciSlot { slot_num, regs }
     }
 
@@ -529,7 +531,7 @@ impl SdhciSlot {
         info!("Attaching card to sdhci slot {}", self.slot_num);
 
         info!("Setting slot {} to identification state", self.slot_num);
-        self.power_up(Voltage::V3_3)?;
+        self.power_up(SdhciOperatingVoltage::V3_3)?;
         self.set_sdclock_frequency(400)?;
 
         // TODO: Probe for card type instead of treating it as a emmc unconditionally
@@ -540,22 +542,22 @@ impl SdhciSlot {
         Ok(())
     }
 
-    fn power_up(&self, voltage: Voltage) -> Result<(), &'static str> {
+    fn power_up(&self, voltage: SdhciOperatingVoltage) -> Result<(), &'static str> {
         unsafe {
             info!("Slot {} target voltage: {}",
                 self.slot_num,
                 match voltage {
-                    Voltage::V1_8 => "1.8V",
-                    Voltage::V3_0 => "3.0V",
-                    Voltage::V3_3 => "3.3V",
+                    SdhciOperatingVoltage::V1_8 => "1.8V",
+                    SdhciOperatingVoltage::V3_0 => "3.0V",
+                    SdhciOperatingVoltage::V3_3 => "3.3V",
                 });
 
 
             let caps = &raw mut (*self.regs).capabilities;
             let voltage_supported = match voltage {
-                Voltage::V1_8 => read_volatile(caps).voltage_1_8_support(),
-                Voltage::V3_0 => read_volatile(caps).voltage_3_0_support(),
-                Voltage::V3_3 => read_volatile(caps).voltage_3_3_support(),
+                SdhciOperatingVoltage::V1_8 => read_volatile(caps).voltage_1_8_support(),
+                SdhciOperatingVoltage::V3_0 => read_volatile(caps).voltage_3_0_support(),
+                SdhciOperatingVoltage::V3_3 => read_volatile(caps).voltage_3_3_support(),
             };
 
             if !voltage_supported {
@@ -665,15 +667,15 @@ impl SdhciSlot {
             info!("\tTimeout clock freq: {}{}", 
                 caps.timeout_clock_freq(),
                 match caps.timeout_clock_unit() {
-                    TimeoutClockUnit::KHz => "KHz",
-                    TimeoutClockUnit::MHz => "MHz",
+                    SdhciTimeoutClockUnit::KHz => "KHz",
+                    SdhciTimeoutClockUnit::MHz => "MHz",
                 });
             info!("\tBase clock freq: {}MHz", caps.base_clock_freq());
             info!("\tMax block length: {}",
                 match caps.max_block_length() {
-                    MaxBlockLength::B512 => "512B",
-                    MaxBlockLength::B1024 => "1024B",
-                    MaxBlockLength::B2048 => "2048B",
+                    SdhciMaxBlockLength::B512 => "512B",
+                    SdhciMaxBlockLength::B1024 => "1024B",
+                    SdhciMaxBlockLength::B2048 => "2048B",
                 });
             info!("\tADMA2 support: {}", caps.adma2_support());
             info!("\tHigh speed support: {}", caps.high_speed_support());
@@ -689,7 +691,7 @@ impl SdhciSlot {
     fn enable_all_interrupt_statuses(&self) {
         unsafe {
             let normal_interrupt_status_enable = &raw mut (*self.regs).normal_interrupt_status_enable;
-            let normal_interrupt_status_enable_val = NormalInterruptStatusEnable::new()
+            let normal_interrupt_status_enable_val = SdhciNormalInterruptStatusEnable::new()
                 .with_command_complete(true)
                 .with_transfer_complete(true)
                 .with_block_gap_event(true)
@@ -702,7 +704,7 @@ impl SdhciSlot {
             write_volatile(normal_interrupt_status_enable, normal_interrupt_status_enable_val);
 
             let error_interrupt_status_enable = &raw mut (*self.regs).error_interrupt_status_enable;
-            let error_interrupt_status_enable_val = ErrorInterruptStatusEnable::new()
+            let error_interrupt_status_enable_val = SdhciErrorInterruptStatusEnable::new()
                 .with_command_timeout(true)
                 .with_command_crc(true)
                 .with_command_end_bit(true)
@@ -720,7 +722,7 @@ impl SdhciSlot {
     fn enable_all_error_signals(&self) {
         unsafe {
             let error_interrupt_signal_enable = &raw mut (*self.regs).error_interrupt_signal_enable;
-            let error_interrupt_signal_enable_val = ErrorInterruptSignalEnable::new()
+            let error_interrupt_signal_enable_val = SdhciErrorInterruptSignalEnable::new()
                 .with_command_timeout(true)
                 .with_command_crc(true)
                 .with_command_end_bit(true)
@@ -738,7 +740,7 @@ impl SdhciSlot {
     fn clear_all_interrupt_statuses(&self) {
         unsafe {
             let normal_interrupt_status = &raw mut (*self.regs).normal_interrupt_status;
-            let normal_interrupt_status_val = NormalInterruptStatus::new()
+            let normal_interrupt_status_val = SdhciNormalInterruptStatus::new()
                 .with_command_complete(true)
                 .with_transfer_complete(true)
                 .with_block_gap_event(true)
@@ -750,7 +752,7 @@ impl SdhciSlot {
             write_volatile(normal_interrupt_status, normal_interrupt_status_val);
 
             let error_interrupt_status = &raw mut (*self.regs).error_interrupt_status;
-            let error_interrupt_status_val = ErrorInterruptStatus::new()
+            let error_interrupt_status_val = SdhciErrorInterruptStatus::new()
                 .with_command_timeout(true)
                 .with_command_crc(true)
                 .with_command_end_bit(true)
@@ -765,79 +767,60 @@ impl SdhciSlot {
         }
     }
 
-    fn issue_non_dat_command(&self, argument: u32, command: Command) -> Result<u128, CommandError> {
+    fn send_command(&self, command: &SdhciCommand) -> Result<(), SdhciError> {
+        // Wait till CMD and DAT (if needed) lines are free
         unsafe {
-            // Wait till CMD line is free
             let present_state = &raw mut (*self.regs).present_state;
-            let mut cmd_inhibit = true;
-            for _ in 0..1000 {
-                if !read_volatile(present_state).command_inhibit_cmd() {
-                    cmd_inhibit = false;
-                    break;
-                }
-            }
-            if cmd_inhibit {
-                return Err(CommandError::IssuanceTimeout);
-            }
 
-            info!("Issuing CMD{} on slot {}", command.index(), self.slot_num);
-
-            let argument_ptr = &raw mut (*self.regs).argument;
-            let command_ptr = &raw mut (*self.regs).command;
-
-            write_volatile(argument_ptr, argument);
-            write_volatile(command_ptr, command);
-
-            match self.wait_for_command_complete() {
-                Ok(_) => Ok(self.read_response_normalized()),
-                Err(err) => Err(CommandError::InterruptedError(err)),
-            }
-        }
-    }
-
-    fn issue_cpu_read_data_transfer(
-        &self,
-        block_size: BlockSize,
-        block_count: u16,
-        argument: u32,
-        transfer_mode: TransferMode,
-        command: Command,
-        buff: &mut [u8]) -> Result<(), CommandError> {
-
-        unsafe {
-            // Wait till DAT and CMD lines are free
-            let present_state = &raw mut (*self.regs).present_state;
-            let mut cmd_and_dat_inhibit = true;
+            // TODO: Set up some timer for timeout
+            let mut lines_free = false;
             for _ in 0..1000 {
                 let present_state_val = read_volatile(present_state);
-                if !present_state_val.command_inhibit_cmd() && !present_state_val.command_inhibit_dat() {
-                    cmd_and_dat_inhibit = false;
+                if !present_state_val.command_inhibit_cmd() && (!command.command_desc.data_present() || !present_state_val.command_inhibit_dat()) {
+                    lines_free = true;
                     break;
                 }
             }
-            if cmd_and_dat_inhibit {
-                return Err(CommandError::IssuanceTimeout);
+            if !lines_free {
+                return Err(SdhciError::Timeout);
             }
 
-            info!("Issuing CMD{} on slot {}", command.index(), self.slot_num);
+            info!("Issuing CMD{} on slot {}", command.command_desc.index(), self.slot_num);
 
+            let sdma_address_ptr = &raw mut (*self.regs).sdma_address;
             let block_size_ptr = &raw mut (*self.regs).block_size;
             let block_count_ptr = &raw mut (*self.regs).block_count;
             let argument_ptr = &raw mut (*self.regs).argument;
             let transfer_mode_ptr = &raw mut (*self.regs).transfer_mode;
             let command_ptr = &raw mut (*self.regs).command;
 
-            write_volatile(block_size_ptr, block_size);
-            write_volatile(block_count_ptr, block_count);
-            write_volatile(argument_ptr, argument);
-            write_volatile(transfer_mode_ptr, transfer_mode);
-            write_volatile(command_ptr, command);
-
-            match self.wait_for_command_complete() {
-                Ok(_) => {},
-                Err(err) => return Err(CommandError::InterruptedError(err)),
+            match &command.kind {
+                SdhciCommandKind::NonDatCommand => {},
+                SdhciCommandKind::DataTransfer(transfer) => {
+                    write_volatile(block_size_ptr, transfer.block_size);
+                    write_volatile(block_count_ptr, transfer.block_count);
+                    write_volatile(transfer_mode_ptr, transfer.transfer_mode);
+                    match &transfer.data_transfer_kind {
+                        SdhciDataTransferKind::CpuTransfer => {},
+                        SdhciDataTransferKind::DmaTransfer(transfer) => {
+                            write_volatile(sdma_address_ptr, transfer.sdma_address);
+                        },
+                    }
+                },
             }
 
+            write_volatile(argument_ptr, command.argument);
+            write_volatile(command_ptr, command.command_desc);
+
+            Ok(())
+        }
+    }
+
+    fn read_from_buffer(&self, buff: &mut [u8]) -> Result<(), SdhciError> {
+        unsafe {
+            let present_state = &raw mut (*self.regs).present_state;
+
+            // TODO: Set up some timer for timeout
             let mut buffer_read_ready = false;
             for _ in 0..1000 {
                 if read_volatile(present_state).buffer_read_enable() {
@@ -846,7 +829,7 @@ impl SdhciSlot {
                 }
             }
             if !buffer_read_ready {
-                return Err(CommandError::IssuanceTimeout);
+                return Err(SdhciError::Timeout);
             }
 
             info!("Reading from slot {}", self.slot_num);
@@ -860,61 +843,11 @@ impl SdhciSlot {
                 }
             }
 
-            match self.wait_for_transfer_complete() {
-                Ok(_) => Ok(()),
-                Err(err) => Err(CommandError::InterruptedError(err)),
-            }
-        }
-    }
-    
-    fn issue_dma_command(
-        &self,
-        sdma_address: u32,
-        block_size: BlockSize,
-        block_count: u16,
-        argument: u32,
-        transfer_mode: TransferMode,
-        command: Command
-        ) -> Result<(), CommandError> {
-        unsafe {
-            // Wait till DAT and CMD lines are free
-            let present_state = &raw mut (*self.regs).present_state;
-            let mut cmd_and_dat_inhibit = true;
-            for _ in 0..1000 {
-                let present_state_val = read_volatile(present_state);
-                if !present_state_val.command_inhibit_cmd() && !present_state_val.command_inhibit_dat() {
-                    cmd_and_dat_inhibit = false;
-                    break;
-                }
-            }
-            if cmd_and_dat_inhibit {
-                return Err(CommandError::IssuanceTimeout);
-            }
-
-            info!("Issuing CMD{} on slot {}", command.index(), self.slot_num);
-
-            let sdma_address_ptr = &raw mut (*self.regs).sdma_address;
-            let block_size_ptr = &raw mut (*self.regs).block_size;
-            let block_count_ptr = &raw mut (*self.regs).block_count;
-            let argument_ptr = &raw mut (*self.regs).argument;
-            let transfer_mode_ptr = &raw mut (*self.regs).transfer_mode;
-            let command_ptr = &raw mut (*self.regs).command;
-
-            write_volatile(sdma_address_ptr, sdma_address);
-            write_volatile(block_size_ptr, block_size);
-            write_volatile(block_count_ptr, block_count);
-            write_volatile(argument_ptr, argument);
-            write_volatile(transfer_mode_ptr, transfer_mode);
-            write_volatile(command_ptr, command);
-
-            match self.wait_for_command_complete() {
-                Ok(_) => Ok(()),
-                Err(err) => Err(CommandError::InterruptedError(err)),
-            }
+            Ok(())
         }
     }
 
-    fn wait_for_command_complete(&self) -> Result<(), ErrorInterruptStatus> {
+    fn wait_for_command_complete(&self) -> Result<(), SdhciError> {
         unsafe {
             let normal_int_status = &raw mut (*self.regs).normal_interrupt_status;
             let error_int_status = &raw mut (*self.regs).error_interrupt_status;
@@ -923,7 +856,7 @@ impl SdhciSlot {
                 let normal_int_status_val = read_volatile(normal_int_status);
 
                 if normal_int_status_val.command_complete() {
-                    let normal_int_status_val = NormalInterruptStatus::new().with_command_complete(true);
+                    let normal_int_status_val = SdhciNormalInterruptStatus::new().with_command_complete(true);
                     write_volatile(normal_int_status, normal_int_status_val);
 
                     return Ok(());
@@ -932,13 +865,13 @@ impl SdhciSlot {
                     let error_int_status_val = read_volatile(error_int_status);
                     write_volatile(error_int_status, error_int_status_val);
 
-                    return Err(error_int_status_val);
+                    return Err(SdhciError::Interrupted(error_int_status_val));
                 }
             }
         }
     }
 
-    fn wait_for_transfer_complete(&self) -> Result<(), ErrorInterruptStatus> {
+    fn wait_for_transfer_complete(&self) -> Result<(), SdhciError> {
         unsafe {
             let normal_int_status = &raw mut (*self.regs).normal_interrupt_status;
             let error_int_status = &raw mut (*self.regs).error_interrupt_status;
@@ -950,10 +883,10 @@ impl SdhciSlot {
                     let error_int_status_val = read_volatile(error_int_status);
                     write_volatile(error_int_status, error_int_status_val);
 
-                    return Err(error_int_status_val);
+                    return Err(SdhciError::Interrupted(error_int_status_val));
                 }
                 else if normal_int_status_val.transfer_complete() {
-                    let normal_int_status_val = NormalInterruptStatus::new().with_transfer_complete(true);
+                    let normal_int_status_val = SdhciNormalInterruptStatus::new().with_transfer_complete(true);
                     write_volatile(normal_int_status, normal_int_status_val);
 
                     return Ok(());
@@ -986,7 +919,7 @@ impl Sdhci {
             pci_bus: bus,
             pci_dev: dev,
             pci_func: func,
-            slots: [Some(SdhciSlot::new(0, sdhci_base as *mut SlotRegisters)), None, None, None, None, None] 
+            slots: [Some(SdhciSlot::new(0, sdhci_base as *mut SdhciSlotRegisters)), None, None, None, None, None] 
         }
     }
 

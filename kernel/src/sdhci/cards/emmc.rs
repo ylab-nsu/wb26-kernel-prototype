@@ -6,25 +6,26 @@ use heapless::mpmc;
 use riscv::_export::critical_section;
 use bitfield_struct::{ bitfield, bitenum };
 use core::ptr::{read_volatile, write_volatile};
-use crate::sdhci::{ Command, CommandType, ResponseType, CommandError, SdhciSlot, TransferMode, TransferingDirection, BlockSize, Voltage };
+use crate::sdhci::sdhci_command::*;
+use crate::sdhci::{ SdhciCommandDesc, SdhciCommandType, SdhciResponseType, SdhciError, SdhciSlot, SdhciTransferMode, SdhciTransferingDirection, SdhciBlockSize, SdhciOperatingVoltage };
 
-const R3_COMMAND_PRESET: Command = Command::new()
-    .with_response_type(ResponseType::ResponseLen48)
+const R3_COMMAND_PRESET: SdhciCommandDesc = SdhciCommandDesc::new()
+    .with_response_type(SdhciResponseType::ResponseLen48)
     .with_crc_enable(false)
     .with_index_check_enable(false);
 
-const R2_COMMAND_PRESET: Command = Command::new()
-    .with_response_type(ResponseType::ResponseLen136)
+const R2_COMMAND_PRESET: SdhciCommandDesc = SdhciCommandDesc::new()
+    .with_response_type(SdhciResponseType::ResponseLen136)
     .with_crc_enable(true)
     .with_index_check_enable(false);
 
-const R1_COMMAND_PRESET: Command = Command::new()
-    .with_response_type(ResponseType::ResponseLen48)
+const R1_COMMAND_PRESET: SdhciCommandDesc = SdhciCommandDesc::new()
+    .with_response_type(SdhciResponseType::ResponseLen48)
     .with_crc_enable(true)
     .with_index_check_enable(true);
 
-const NO_RESPONSE_PRESET: Command = Command::new()
-    .with_response_type(ResponseType::NoResponse)
+const NO_RESPONSE_PRESET: SdhciCommandDesc = SdhciCommandDesc::new()
+    .with_response_type(SdhciResponseType::NoResponse)
     .with_crc_enable(false)
     .with_index_check_enable(false);
 
@@ -94,7 +95,7 @@ enum AccessMode {
 
 #[derive(Debug)]
 pub enum EmmcUnrecoverableError {
-    CommandError(CommandError),
+    SdhciError(SdhciError),
     AllocatorError(AllocatorError),
     Incompatible,                   // Card is incompatible with host
 }
@@ -110,9 +111,9 @@ pub enum EmmcError {
     Unrecoverable(EmmcUnrecoverableError),
 }
 
-impl From<CommandError> for EmmcUnrecoverableError {
-    fn from(err: CommandError) -> Self {
-        return EmmcUnrecoverableError::CommandError(err);
+impl From<SdhciError> for EmmcUnrecoverableError {
+    fn from(err: SdhciError) -> Self {
+        return EmmcUnrecoverableError::SdhciError(err);
     }
 }
 impl From<AllocatorError> for EmmcUnrecoverableError {
@@ -120,9 +121,9 @@ impl From<AllocatorError> for EmmcUnrecoverableError {
         return EmmcUnrecoverableError::AllocatorError(err);
     }
 }
-impl From<CommandError> for EmmcError {
-    fn from(err: CommandError) -> Self {
-        return EmmcError::Unrecoverable(EmmcUnrecoverableError::CommandError(err));
+impl From<SdhciError> for EmmcError {
+    fn from(err: SdhciError) -> Self {
+        return EmmcError::Unrecoverable(EmmcUnrecoverableError::SdhciError(err));
     }
 }
 impl From<AllocatorError> for EmmcError {
@@ -200,9 +201,9 @@ impl Ocr {
             let power_ctl = read_volatile(power_ctl);
 
             match power_ctl.voltage() {
-                Voltage::V1_8 => self.from_1_70V_to_1_95V(),
-                Voltage::V3_0 => self.V3_0(),
-                Voltage::V3_3 => self.V3_3(),
+                SdhciOperatingVoltage::V1_8 => self.from_1_70V_to_1_95V(),
+                SdhciOperatingVoltage::V3_0 => self.V3_0(),
+                SdhciOperatingVoltage::V3_3 => self.V3_3(),
             }
         }
     }
@@ -236,26 +237,36 @@ impl Emmc {
         // TODO: Check for errors
         sdhci_slot.set_sdclock_frequency(400);
 
-        let command = NO_RESPONSE_PRESET
-            .with_data_present(false)
-            .with_command_type(CommandType::Normal)
-            .with_index(0);
-        let argument = 0x0;
-        sdhci_slot.issue_non_dat_command(argument, command)?;
+        let command = SdhciCommand {
+            command_desc: NO_RESPONSE_PRESET
+                .with_data_present(false)
+                .with_command_type(SdhciCommandType::Normal)
+                .with_index(0),
+            argument: 0x0,
+            kind: SdhciCommandKind::NonDatCommand,
+        };
+        sdhci_slot.send_command(&command)?;
+        sdhci_slot.wait_for_command_complete()?;
 
         let rca: u16 = 1;
         let slot_ocr = slot_capabilities_to_ocr(&sdhci_slot);
         let slot_ocr_as_bits = slot_ocr.into_bits();
 
+        // Send CMD1 - receive OCR
+        let command = SdhciCommand {
+            command_desc: R3_COMMAND_PRESET
+                .with_data_present(false)
+                .with_command_type(SdhciCommandType::Normal)
+                .with_index(1),
+            argument: slot_ocr_as_bits,
+            kind: SdhciCommandKind::NonDatCommand,
+        };
+
         // Wait until card isn't busy with power up procedure
         let ocr = loop {
-            // Send CMD1 - receive OCR
-            let command = R3_COMMAND_PRESET
-                .with_data_present(false)
-                .with_command_type(CommandType::Normal)
-                .with_index(1);
-            let argument = slot_ocr_as_bits;
-            let ocr = Ocr::from_bits(sdhci_slot.issue_non_dat_command(argument, command)? as u32);
+            sdhci_slot.send_command(&command)?;
+            sdhci_slot.wait_for_command_complete()?;
+            let ocr = Ocr::from_bits(sdhci_slot.read_response_normalized() as u32);
 
             // If card finished power up procedure - break
             if ocr.powered_up() {
@@ -277,32 +288,47 @@ impl Emmc {
         let access_mode = ocr.access_mode();
 
         // Send CMD2 - receive CID
-        let command = R2_COMMAND_PRESET
-            .with_data_present(false)
-            .with_command_type(CommandType::Normal)
-            .with_index(2);
-        let argument = 0x0;
-        let cid = sdhci_slot.issue_non_dat_command(argument, command)?;
+        let command = SdhciCommand {
+            command_desc: R2_COMMAND_PRESET
+                .with_data_present(false)
+                .with_command_type(SdhciCommandType::Normal)
+                .with_index(2),
+            argument: 0x0,
+            kind: SdhciCommandKind::NonDatCommand,
+        };
+        sdhci_slot.send_command(&command)?;
+        sdhci_slot.wait_for_command_complete()?;
+        let cid = sdhci_slot.read_response_normalized();
 
         info!("Slot {} CID: {:x}", sdhci_slot.slot_num, cid);
 
         // Send CMD3 - set RCA
-        let command = R1_COMMAND_PRESET
-            .with_data_present(false)
-            .with_command_type(CommandType::Normal)
-            .with_index(3);
-        let argument = 0x1 << 16;
-        let status = sdhci_slot.issue_non_dat_command(argument, command)?;
+        let command = SdhciCommand {
+            command_desc: R1_COMMAND_PRESET
+                .with_data_present(false)
+                .with_command_type(SdhciCommandType::Normal)
+                .with_index(3),
+            argument: (rca as u32) << 16,
+            kind: SdhciCommandKind::NonDatCommand,
+        };
+        sdhci_slot.send_command(&command)?;
+        sdhci_slot.wait_for_command_complete()?;
+        let status = sdhci_slot.read_response_normalized();
 
         // TODO: Struct/bitfield for status interpreting
         info!("Slot {} state {}", sdhci_slot.slot_num, (status >> 8) & 0b1111);
 
-        let command = R1_COMMAND_PRESET
-            .with_data_present(false)
-            .with_command_type(CommandType::Normal)
-            .with_index(7);
-        let argument = 0x1 << 16;
-        let status = sdhci_slot.issue_non_dat_command(argument, command)?;
+        let command = SdhciCommand {
+            command_desc: R1_COMMAND_PRESET
+                .with_data_present(false)
+                .with_command_type(SdhciCommandType::Normal)
+                .with_index(7),
+            argument: (rca as u32) << 16,
+            kind: SdhciCommandKind::NonDatCommand,
+        };
+        sdhci_slot.send_command(&command)?;
+        sdhci_slot.wait_for_command_complete()?;
+        let status = sdhci_slot.read_response_normalized();
         info!("Slot {} state {}", sdhci_slot.slot_num, (status >> 8) & 0b1111);
 
         // Allocate bounce buffer
@@ -317,37 +343,41 @@ impl Emmc {
         Ok(Emmc { sdhci_slot, block_size: 512, bounce_buffer: buff, access_mode, rca })
     }
 
-    fn serve_op(&self, op: EmmcOp) -> Result<(), CommandError> {
+    fn serve_op(&self, op: EmmcOp) -> Result<(), EmmcError> {
         match op {
             EmmcOp::Read {block_index: block_index, address: address } => {
-                let block_size = BlockSize::new()
-                    .with_transfer_block_size(self.block_size)
-                    .with_host_sdma_buffer_boundary(0);
-                let transfer_mode = TransferMode::new()
-                    .with_dma_enable(true)
-                    .with_block_count_enable(false)
-                    .with_auto_cmd12_enable(false)
-                    .with_data_transfer_direction_select(TransferingDirection::Read)
-                    .with_multi_block_select(false);
-                let command = R1_COMMAND_PRESET
-                    .with_data_present(true)
-                    .with_command_type(CommandType::Normal)
-                    .with_index(17);
+                let data_transfer_kind = SdhciDataTransferKind::DmaTransfer(SdhciDmaTransfer {
+                    sdma_address: TryInto::<usize>::try_into(self.bounce_buffer.addr()).unwrap() as u32,
+                });
+                let kind = SdhciCommandKind::DataTransfer(SdhciDataTransfer {
+                    block_size: SdhciBlockSize::new()
+                        .with_transfer_block_size(self.block_size)
+                        .with_host_sdma_buffer_boundary(0),
+                    block_count: 1,
+                    transfer_mode: SdhciTransferMode::new()
+                        .with_dma_enable(true)
+                        .with_block_count_enable(false)
+                        .with_auto_cmd12_enable(false)
+                        .with_data_transfer_direction_select(SdhciTransferingDirection::Read)
+                        .with_multi_block_select(false),
+                    data_transfer_kind,
+                });
+                let command = SdhciCommand {
+                    argument: block_index,
+                    command_desc: R1_COMMAND_PRESET
+                        .with_data_present(true)
+                        .with_command_type(SdhciCommandType::Normal)
+                        .with_index(17),
+                    kind,
+                };
+                self.sdhci_slot.send_command(&command)?;
+                let res = self.sdhci_slot.wait_for_command_complete();
                 
-                let res = self.sdhci_slot.issue_dma_command(
-                    TryInto::<usize>::try_into(self.bounce_buffer.addr()).unwrap() as u32,
-                    block_size,
-                    1, 
-                    block_index,
-                    transfer_mode,
-                    command
-                    );
-
                 if res.is_ok() {
                     info!("Reading from slot {}", self.sdhci_slot.slot_num);
                 }
 
-                res
+                Ok(res?)
             },
             EmmcOp::Write {block_index: block_index, address: address } => {
                 unsafe {
@@ -357,34 +387,38 @@ impl Emmc {
                     bounce_buffer.copy_from_slice(data_buffer);
                 }
 
-                let block_size = BlockSize::new()
-                    .with_transfer_block_size(self.block_size)
-                    .with_host_sdma_buffer_boundary(0);
-                let transfer_mode = TransferMode::new()
-                    .with_dma_enable(true)
-                    .with_block_count_enable(false)
-                    .with_auto_cmd12_enable(false)
-                    .with_data_transfer_direction_select(TransferingDirection::Write)
-                    .with_multi_block_select(false);
-                let command = R1_COMMAND_PRESET
-                    .with_data_present(true)
-                    .with_command_type(CommandType::Normal)
-                    .with_index(24);
-                
-                let res = self.sdhci_slot.issue_dma_command(
-                    TryInto::<usize>::try_into(self.bounce_buffer.addr()).unwrap() as u32,
-                    block_size,
-                    1, 
-                    block_index,
-                    transfer_mode,
-                    command
-                    );
+                let data_transfer_kind = SdhciDataTransferKind::DmaTransfer(SdhciDmaTransfer {
+                    sdma_address: TryInto::<usize>::try_into(self.bounce_buffer.addr()).unwrap() as u32,
+                });
+                let kind = SdhciCommandKind::DataTransfer(SdhciDataTransfer {
+                    block_size: SdhciBlockSize::new()
+                        .with_transfer_block_size(self.block_size)
+                        .with_host_sdma_buffer_boundary(0),
+                    block_count: 1,
+                    transfer_mode: SdhciTransferMode::new()
+                        .with_dma_enable(true)
+                        .with_block_count_enable(false)
+                        .with_auto_cmd12_enable(false)
+                        .with_data_transfer_direction_select(SdhciTransferingDirection::Write)
+                        .with_multi_block_select(false),
+                    data_transfer_kind,
+                });
+                let command = SdhciCommand {
+                    command_desc: R1_COMMAND_PRESET
+                        .with_data_present(true)
+                        .with_command_type(SdhciCommandType::Normal)
+                        .with_index(24),
+                    argument: block_index,
+                    kind,
+                };
+                self.sdhci_slot.send_command(&command)?;
+                let res = self.sdhci_slot.wait_for_command_complete();
 
                 if res.is_ok() {
                     info!("Writing to slot {}", self.sdhci_slot.slot_num);
                 }
 
-                res
+                Ok(res?)
             },
         }
     }
@@ -463,7 +497,7 @@ fn main_routine(slot: SdhciSlot) -> Result<(), EmmcError> {
                             None => {},
                         }
                     },
-                    Err(err) => error!("DMA error: {}", err.into_bits()),
+                    Err(err) => error!("DMA error: {:?}", err),
                 }
 
                 current = None;
@@ -486,12 +520,8 @@ fn main_routine(slot: SdhciSlot) -> Result<(), EmmcError> {
                     current = Some(op);
                     match emmc.serve_op(op) {
                         Ok(_) => {},
-                        Err(CommandError::IssuanceTimeout) => {
-                            error!("Slot {} issuance timeout", slot.slot_num);
-                            current = None;
-                        },
-                        Err(CommandError::InterruptedError(err)) => {
-                            error!("Slot {} inrerrupt error: {}", slot.slot_num, err.into_bits());
+                        Err(err) => {
+                            error!("Slot {} error: {:?}", slot.slot_num, err);
                             current = None;
                         },
                     }
@@ -520,15 +550,15 @@ fn try_recover(slot: SdhciSlot, err: EmmcRecoverableError) -> Result<(), EmmcUnr
 
                 // TODO: Check for errors
                 if slot_cap.voltage_3_3_support() && emmc_ocr.V3_3() {
-                    slot.power_up(Voltage::V3_3);
+                    slot.power_up(SdhciOperatingVoltage::V3_3);
                     Ok(())
                 }
                 else if slot_cap.voltage_3_0_support() && emmc_ocr.V3_0() {
-                    slot.power_up(Voltage::V3_0);
+                    slot.power_up(SdhciOperatingVoltage::V3_0);
                     Ok(())
                 }
                 else if slot_cap.voltage_1_8_support() && emmc_ocr.from_1_70V_to_1_95V() {
-                    slot.power_up(Voltage::V1_8);
+                    slot.power_up(SdhciOperatingVoltage::V1_8);
                     Ok(())
                 }
                 else {
