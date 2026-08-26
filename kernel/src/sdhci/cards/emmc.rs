@@ -5,7 +5,6 @@ use crate::threading::scheduler::reschedule;
 use heapless::mpmc;
 use riscv::_export::critical_section;
 use bitfield_struct::{ bitfield, bitenum };
-use core::ptr::{read_volatile, write_volatile};
 use crate::sdhci::sdhci_command::*;
 use crate::sdhci::{ SdhciCommandDesc, SdhciCommandType, SdhciResponseType, SdhciError, SdhciSlot, SdhciTransferMode, SdhciTransferingDirection, SdhciBlockSize, SdhciOperatingVoltage };
 
@@ -197,8 +196,7 @@ impl Ocr {
     // If current slot voltage is compatible with OCR
     fn runs_in_compatible_conditions(&self, slot: &SdhciSlot) -> bool {
         unsafe {
-            let power_ctl = &raw const (*slot.regs).power_control;
-            let power_ctl = read_volatile(power_ctl);
+            let power_ctl = slot.sdhci_interface.power_control();
 
             match power_ctl.voltage() {
                 SdhciOperatingVoltage::V1_8 => self.from_1_70V_to_1_95V(),
@@ -219,17 +217,16 @@ struct Emmc {
 
 impl Emmc {
     // Init card and retrieve info about it
-    fn new(sdhci_slot: SdhciSlot) -> Result<Self, EmmcError> {
+    fn new(mut sdhci_slot: SdhciSlot) -> Result<Self, EmmcError> {
         // Enable all interrupts statuses and clear them
         sdhci_slot.clear_all_interrupt_statuses();
         sdhci_slot.enable_all_interrupt_statuses();               
 
         // Enable transfer complete interrupts signal and error signals
         unsafe {
-            let normal_interrupt_signal_enable = &raw mut (*sdhci_slot.regs).normal_interrupt_signal_enable;
-            let normal_interrupt_signal_enable_val = read_volatile(normal_interrupt_signal_enable)
+            let normal_interrupt_signal_enable = sdhci_slot.sdhci_interface.normal_interrupt_signal_enable()
                 .with_transfer_complete(true);
-            write_volatile(normal_interrupt_signal_enable, normal_interrupt_signal_enable_val);
+            sdhci_slot.sdhci_interface.set_normal_interrupt_signal_enable(normal_interrupt_signal_enable);
         }
         sdhci_slot.enable_all_error_signals();
 
@@ -343,7 +340,7 @@ impl Emmc {
         Ok(Emmc { sdhci_slot, block_size: 512, bounce_buffer: buff, access_mode, rca })
     }
 
-    fn serve_op(&self, op: EmmcOp) -> Result<(), EmmcError> {
+    fn serve_op(&mut self, op: EmmcOp) -> Result<(), EmmcError> {
         match op {
             EmmcOp::Read {block_index: block_index, address: address } => {
                 let data_transfer_kind = SdhciDataTransferKind::DmaTransfer(SdhciDmaTransfer {
@@ -427,8 +424,7 @@ impl Emmc {
 // Build desired Operation Conditions from slot capabilities
 fn slot_capabilities_to_ocr(slot: &SdhciSlot) -> Ocr {
     unsafe {
-        let slot_cap = &raw const (*slot.regs).capabilities;
-        let slot_cap = read_volatile(slot_cap);
+        let slot_cap = slot.sdhci_interface.capabilities();
         Ocr::new()
             .with_from_1_70V_to_1_95V(slot_cap.voltage_1_8_support())
             .with_V2_0(false)
@@ -452,7 +448,7 @@ fn slot_capabilities_to_ocr(slot: &SdhciSlot) -> Ocr {
     }
 }
 
-fn main_routine(slot: SdhciSlot) -> Result<(), EmmcError> {
+fn main_routine(mut slot: SdhciSlot) -> Result<(), EmmcError> {
     let mut emmc = Emmc::new(slot)?;
 
     let mut current: Option<EmmcOp> = None;
@@ -541,12 +537,11 @@ fn main_routine(slot: SdhciSlot) -> Result<(), EmmcError> {
     Ok(())
 }
 
-fn try_recover(slot: SdhciSlot, err: EmmcRecoverableError) -> Result<(), EmmcUnrecoverableError> {
+fn try_recover(mut slot: SdhciSlot, err: EmmcRecoverableError) -> Result<(), EmmcUnrecoverableError> {
     match err {
         EmmcRecoverableError::InvalidConditions(emmc_ocr) => {
             unsafe {
-                let slot_cap = &raw const (*slot.regs).capabilities;
-                let slot_cap = read_volatile(slot_cap);
+                let slot_cap = slot.sdhci_interface.capabilities();
 
                 // TODO: Check for errors
                 if slot_cap.voltage_3_3_support() && emmc_ocr.V3_3() {
