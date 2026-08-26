@@ -244,7 +244,7 @@ impl Emmc {
         sdhci_slot.issue_non_dat_command(argument, command)?;
 
         let rca: u16 = 1;
-        let slot_ocr = Self::slot_capabilities_to_ocr(&sdhci_slot);
+        let slot_ocr = slot_capabilities_to_ocr(&sdhci_slot);
         let slot_ocr_as_bits = slot_ocr.into_bits();
 
         // Wait until card isn't busy with power up procedure
@@ -317,34 +317,6 @@ impl Emmc {
         Ok(Emmc { sdhci_slot, block_size: 512, bounce_buffer: buff, access_mode, rca })
     }
 
-    // Build desired Operation Conditions from slot capabilities
-    fn slot_capabilities_to_ocr(slot: &Slot) -> Ocr {
-        unsafe {
-            let slot_cap = &raw const (*slot.regs).capabilities;
-            let slot_cap = read_volatile(slot_cap);
-            Ocr::new()
-                .with_from_1_70V_to_1_95V(slot_cap.voltage_1_8_support())
-                .with_V2_0(false)
-                .with_V2_1(false)
-                .with_V2_2(false)
-                .with_V2_3(false)
-                .with_V2_4(false)
-                .with_V2_5(false)
-                .with_V2_6(false)
-                .with_V2_7(false)
-                .with_V2_8(false)
-                .with_V2_9(false)
-                .with_V3_0(slot_cap.voltage_3_0_support())
-                .with_V3_1(false)
-                .with_V3_2(false)
-                .with_V3_3(slot_cap.voltage_3_3_support())
-                .with_V3_4(false)
-                .with_V3_5(false)
-                .with_access_mode(AccessMode::Sector) // NOTE: Slot is always capable of sector access
-                .with_powered_up(false)
-        }
-    }
-
     fn serve_op(&self, op: EmmcOp) -> Result<(), CommandError> {
         match op {
             EmmcOp::Read {block_index: block_index, address: address } => {
@@ -415,6 +387,34 @@ impl Emmc {
                 res
             },
         }
+    }
+}
+
+// Build desired Operation Conditions from slot capabilities
+fn slot_capabilities_to_ocr(slot: &Slot) -> Ocr {
+    unsafe {
+        let slot_cap = &raw const (*slot.regs).capabilities;
+        let slot_cap = read_volatile(slot_cap);
+        Ocr::new()
+            .with_from_1_70V_to_1_95V(slot_cap.voltage_1_8_support())
+            .with_V2_0(false)
+            .with_V2_1(false)
+            .with_V2_2(false)
+            .with_V2_3(false)
+            .with_V2_4(false)
+            .with_V2_5(false)
+            .with_V2_6(false)
+            .with_V2_7(false)
+            .with_V2_8(false)
+            .with_V2_9(false)
+            .with_V3_0(slot_cap.voltage_3_0_support())
+            .with_V3_1(false)
+            .with_V3_2(false)
+            .with_V3_3(slot_cap.voltage_3_3_support())
+            .with_V3_4(false)
+            .with_V3_5(false)
+            .with_access_mode(AccessMode::Sector) // NOTE: Slot is always capable of sector access
+            .with_powered_up(false)
     }
 }
 
@@ -512,8 +512,31 @@ fn main_routine(slot: Slot) -> Result<(), EmmcError> {
 }
 
 fn try_recover(slot: Slot, err: EmmcRecoverableError) -> Result<(), EmmcUnrecoverableError> {
-    // TODO: Actually try to recover
-    Err(EmmcUnrecoverableError::Incompatible)
+    match err {
+        EmmcRecoverableError::InvalidConditions(emmc_ocr) => {
+            unsafe {
+                let slot_cap = &raw const (*slot.regs).capabilities;
+                let slot_cap = read_volatile(slot_cap);
+
+                // TODO: Check for errors
+                if slot_cap.voltage_3_3_support() && emmc_ocr.V3_3() {
+                    slot.power_up(Voltage::V3_3);
+                    Ok(())
+                }
+                else if slot_cap.voltage_3_0_support() && emmc_ocr.V3_0() {
+                    slot.power_up(Voltage::V3_0);
+                    Ok(())
+                }
+                else if slot_cap.voltage_1_8_support() && emmc_ocr.from_1_70V_to_1_95V() {
+                    slot.power_up(Voltage::V1_8);
+                    Ok(())
+                }
+                else {
+                    Err(EmmcUnrecoverableError::Incompatible)
+                }
+            }
+        }
+    }
 }
 
 pub extern "C" fn driver_task() -> ! {

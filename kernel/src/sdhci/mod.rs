@@ -564,6 +564,11 @@ impl Slot {
 
             let power_ctl_ptr = &raw mut (*self.regs).power_control;
             let power_ctl = read_volatile(power_ctl_ptr);
+
+            // Power off
+            write_volatile(power_ctl_ptr, power_ctl.with_sd_bus_power(false));
+
+            // Power on with changed voltage
             write_volatile(power_ctl_ptr, power_ctl
                 .with_sd_bus_power(true)
                 .with_voltage(voltage));
