@@ -78,9 +78,13 @@ pub fn put_into_queue(message: EmmcDriverMessage, queue: &mpmc::QueueView<EmmcOp
     }
 }
 
-enum AddressingMode {
-    Byte,
-    Sector,
+#[derive(Debug)]
+#[repr(u8)]
+#[bitenum(all = false)]
+enum AccessMode {
+    #[fallback]
+    Byte = 0,
+    Sector = 2,
 }
 
 #[derive(Debug)]
@@ -100,11 +104,40 @@ impl From<AllocatorError> for EmmcInitializationError {
     }
 }
 
+// Operation Conditions Register
+#[bitfield(u32)]
+struct Ocr {
+    #[bits(7)]
+    __: usize,
+    from_1_70V_to_1_95V: bool,
+    V2_0: bool,
+    V2_1: bool,
+    V2_2: bool,
+    V2_3: bool,
+    V2_4: bool,
+    V2_5: bool,
+    V2_6: bool,
+    V2_7: bool,
+    V2_8: bool,
+    V2_9: bool,
+    V3_0: bool,
+    V3_1: bool,
+    V3_2: bool,
+    V3_3: bool,
+    V3_4: bool,
+    V3_5: bool,
+    #[bits(5)]
+    __: usize,
+    #[bits(2)]
+    access_mode: AccessMode,
+    powered_up: bool,
+}
+
 struct Emmc {
     sdhci_slot: Slot,
     block_size: u16,                    // in bytes
     bounce_buffer: PhysicalAllocation,  // buffer in first 4GB of phys memory
-    addressing_mode: AddressingMode,
+    access_mode: AccessMode,
     rca: u16,
 }
 
@@ -117,27 +150,27 @@ impl Emmc {
         sdhci_slot.enable_all_interrupt_statuses();               
 
         let rca: u16 = 1;
+        let slot_ocr = Self::slot_capabilities_to_ocr(&sdhci_slot).into_bits();
 
-        // Wait untill card isn't busy with power initialization
+        // Wait untill card isn't busy with power up procedure
         let ocr = loop {
             // Send CMD1 - receive OCR
             let command = R3_COMMAND_PRESET
                 .with_data_present(false)
                 .with_command_type(CommandType::Normal)
                 .with_index(1);
-            // TODO: Read compatibilities register and build argument based on it
-            let argument = 0x80200080; // Sector addressing mode + 3.3V + 1.8V
-            let ocr = sdhci_slot.issue_non_dat_command(argument, command)?;
+            let argument = slot_ocr;
+            let ocr = Ocr::from_bits(sdhci_slot.issue_non_dat_command(argument, command)? as u32);
 
-            // If isn't busy - break
-            if ocr & (1 << 31) != 0 {
+            // If card finished power up procedure - break
+            if ocr.powered_up() {
                 break ocr;
             }
         };
 
-        info!("Successful CMD1: {:x}", ocr);
+        info!("Successful CMD1: {:x}", ocr.into_bits());
         // TODO: Check if card went to inactive mode because of incompatible voltage
-        let addressing_mode = if ocr & (1 << 30) == 1 { AddressingMode::Sector } else { AddressingMode::Byte };
+        let access_mode = ocr.access_mode();
 
         // Send CMD2 - receive CID
         let command = R2_COMMAND_PRESET
@@ -181,7 +214,35 @@ impl Emmc {
         assert!(buff_addr < (1 << 32));
 
         // TODO: Get block size as minimum between slot and eMMC capabilities
-        Ok(Emmc { sdhci_slot, block_size: 512, bounce_buffer: buff, addressing_mode, rca })
+        Ok(Emmc { sdhci_slot, block_size: 512, bounce_buffer: buff, access_mode, rca })
+    }
+
+    // Build desired Operation Conditions from slot capabilities
+    fn slot_capabilities_to_ocr(slot: &Slot) -> Ocr {
+        unsafe {
+            let slot_cap = &raw const (*slot.regs).capabilities;
+            let slot_cap = read_volatile(slot_cap);
+            Ocr::new()
+                .with_from_1_70V_to_1_95V(slot_cap.voltage_1_8_support())
+                .with_V2_0(false)
+                .with_V2_1(false)
+                .with_V2_2(false)
+                .with_V2_3(false)
+                .with_V2_4(false)
+                .with_V2_5(false)
+                .with_V2_6(false)
+                .with_V2_7(false)
+                .with_V2_8(false)
+                .with_V2_9(false)
+                .with_V3_0(slot_cap.voltage_3_0_support())
+                .with_V3_1(false)
+                .with_V3_2(false)
+                .with_V3_3(slot_cap.voltage_3_3_support())
+                .with_V3_4(false)
+                .with_V3_5(false)
+                .with_access_mode(AccessMode::Sector) // NOTE: Slot is always capable of sector access
+                .with_powered_up(false)
+        }
     }
 
     fn serve_op(&self, op: EmmcOp) -> Result<(), CommandError> {
