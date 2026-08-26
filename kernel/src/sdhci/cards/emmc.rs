@@ -6,7 +6,7 @@ use heapless::mpmc;
 use riscv::_export::critical_section;
 use bitfield_struct::{ bitfield, bitenum };
 use core::ptr::{read_volatile, write_volatile};
-use crate::sdhci::{ Command, CommandType, ResponseType, CommandError, Slot, TransferMode, TransferingDirection, BlockSize };
+use crate::sdhci::{ Command, CommandType, ResponseType, CommandError, Slot, TransferMode, TransferingDirection, BlockSize, Voltage };
 
 const R3_COMMAND_PRESET: Command = Command::new()
     .with_response_type(ResponseType::ResponseLen48)
@@ -91,6 +91,8 @@ enum AccessMode {
 pub enum EmmcInitializationError {
     CommandError(CommandError),
     AllocatorError(AllocatorError),
+    Incompatible,                   // Card is incompatible with host
+    InvalidConditions(Ocr),         // The host is compatible with card, but must change it's mode
 }
 
 impl From<CommandError> for EmmcInitializationError {
@@ -133,6 +135,44 @@ struct Ocr {
     powered_up: bool,
 }
 
+impl Ocr {
+    // If two ocr values are compatible
+    fn compatible_with(&self, other: &Self) -> bool {
+        // No bitmasks today in order to be able to change fields order 
+        self.from_1_70V_to_1_95V() && other.from_1_70V_to_1_95V() || 
+        self.V2_0() && other.V2_0() || 
+        self.V2_1() && other.V2_1() || 
+        self.V2_2() && other.V2_2() || 
+        self.V2_3() && other.V2_3() || 
+        self.V2_4() && other.V2_4() || 
+        self.V2_5() && other.V2_5() || 
+        self.V2_6() && other.V2_6() || 
+        self.V2_7() && other.V2_7() || 
+        self.V2_8() && other.V2_8() || 
+        self.V2_9() && other.V2_9() || 
+        self.V3_0() && other.V3_0() || 
+        self.V3_1() && other.V3_1() || 
+        self.V3_2() && other.V3_2() || 
+        self.V3_3() && other.V3_3() || 
+        self.V3_4() && other.V3_4() || 
+        self.V3_5() && other.V3_5()
+    }
+
+    // If current slot voltage is compatible with OCR
+    fn runs_in_compatible_conditions(&self, slot: &Slot) -> bool {
+        unsafe {
+            let power_ctl = &raw const (*slot.regs).power_control;
+            let power_ctl = read_volatile(power_ctl);
+
+            match power_ctl.voltage() {
+                Voltage::V1_8 => self.from_1_70V_to_1_95V(),
+                Voltage::V3_0 => self.V3_0(),
+                Voltage::V3_3 => self.V3_3(),
+            }
+        }
+    }
+}
+
 struct Emmc {
     sdhci_slot: Slot,
     block_size: u16,                    // in bytes
@@ -150,7 +190,8 @@ impl Emmc {
         sdhci_slot.enable_all_interrupt_statuses();               
 
         let rca: u16 = 1;
-        let slot_ocr = Self::slot_capabilities_to_ocr(&sdhci_slot).into_bits();
+        let slot_ocr = Self::slot_capabilities_to_ocr(&sdhci_slot);
+        let slot_ocr_as_bits = slot_ocr.into_bits();
 
         // Wait untill card isn't busy with power up procedure
         let ocr = loop {
@@ -159,7 +200,7 @@ impl Emmc {
                 .with_data_present(false)
                 .with_command_type(CommandType::Normal)
                 .with_index(1);
-            let argument = slot_ocr;
+            let argument = slot_ocr_as_bits;
             let ocr = Ocr::from_bits(sdhci_slot.issue_non_dat_command(argument, command)? as u32);
 
             // If card finished power up procedure - break
@@ -169,7 +210,16 @@ impl Emmc {
         };
 
         info!("Successful CMD1: {:x}", ocr.into_bits());
-        // TODO: Check if card went to inactive mode because of incompatible voltage
+
+        // If slot is incompatible with card
+        if !ocr.compatible_with(&slot_ocr) {
+            return Err(EmmcInitializationError::Incompatible);
+        }
+        // If slot is compatible, but must change its' voltage
+        if !ocr.runs_in_compatible_conditions(&sdhci_slot) {
+            return Err(EmmcInitializationError::InvalidConditions(ocr));
+        }
+
         let access_mode = ocr.access_mode();
 
         // Send CMD2 - receive CID
@@ -416,6 +466,7 @@ pub extern "C" fn driver_task() -> ! {
                         }
                     }
                 },
+                // TODO: Do error-recovery if possible
                 Err(err) => error!("Slot {} error: {:?}", slot.slot_num, err),
             }
         }
