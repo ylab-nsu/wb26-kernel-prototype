@@ -6,7 +6,7 @@ use heapless::mpmc;
 use riscv::_export::critical_section;
 use bitfield_struct::{ bitfield, bitenum };
 use core::ptr::{read_volatile, write_volatile};
-use crate::sdhci::{ Command, CommandType, ResponseType, CommandError, Slot, TransferMode, TransferingDirection, BlockSize, Voltage };
+use crate::sdhci::{ Command, CommandType, ResponseType, CommandError, SdhciSlot, TransferMode, TransferingDirection, BlockSize, Voltage };
 
 const R3_COMMAND_PRESET: Command = Command::new()
     .with_response_type(ResponseType::ResponseLen48)
@@ -194,7 +194,7 @@ impl Ocr {
     }
 
     // If current slot voltage is compatible with OCR
-    fn runs_in_compatible_conditions(&self, slot: &Slot) -> bool {
+    fn runs_in_compatible_conditions(&self, slot: &SdhciSlot) -> bool {
         unsafe {
             let power_ctl = &raw const (*slot.regs).power_control;
             let power_ctl = read_volatile(power_ctl);
@@ -209,7 +209,7 @@ impl Ocr {
 }
 
 struct Emmc {
-    sdhci_slot: Slot,
+    sdhci_slot: SdhciSlot,
     block_size: u16,                    // in bytes
     bounce_buffer: PhysicalAllocation,  // buffer in first 4GB of phys memory
     access_mode: AccessMode,
@@ -218,7 +218,7 @@ struct Emmc {
 
 impl Emmc {
     // Init card and retrieve info about it
-    fn new(sdhci_slot: Slot) -> Result<Self, EmmcError> {
+    fn new(sdhci_slot: SdhciSlot) -> Result<Self, EmmcError> {
         // Enable all interrupts statuses and clear them
         sdhci_slot.clear_all_interrupt_statuses();
         sdhci_slot.enable_all_interrupt_statuses();               
@@ -391,7 +391,7 @@ impl Emmc {
 }
 
 // Build desired Operation Conditions from slot capabilities
-fn slot_capabilities_to_ocr(slot: &Slot) -> Ocr {
+fn slot_capabilities_to_ocr(slot: &SdhciSlot) -> Ocr {
     unsafe {
         let slot_cap = &raw const (*slot.regs).capabilities;
         let slot_cap = read_volatile(slot_cap);
@@ -418,7 +418,7 @@ fn slot_capabilities_to_ocr(slot: &Slot) -> Ocr {
     }
 }
 
-fn main_routine(slot: Slot) -> Result<(), EmmcError> {
+fn main_routine(slot: SdhciSlot) -> Result<(), EmmcError> {
     let mut emmc = Emmc::new(slot)?;
 
     let mut current: Option<EmmcOp> = None;
@@ -511,7 +511,7 @@ fn main_routine(slot: Slot) -> Result<(), EmmcError> {
     Ok(())
 }
 
-fn try_recover(slot: Slot, err: EmmcRecoverableError) -> Result<(), EmmcUnrecoverableError> {
+fn try_recover(slot: SdhciSlot, err: EmmcRecoverableError) -> Result<(), EmmcUnrecoverableError> {
     match err {
         EmmcRecoverableError::InvalidConditions(emmc_ocr) => {
             unsafe {

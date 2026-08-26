@@ -483,7 +483,7 @@ struct SlotRegisters {
 
 // Bus-specific data about device attached to it
 #[derive(Copy, Clone)]
-struct Slot {
+struct SdhciSlot {
     slot_num: u8,
     regs: *mut SlotRegisters,
 }
@@ -493,7 +493,7 @@ struct Sdhci {
     pci_bus: u8,
     pci_dev: u8,
     pci_func: u8,
-    slots: [Option<Slot>; 6],
+    slots: [Option<SdhciSlot>; 6],
 }
 
 #[derive(Debug)]
@@ -502,9 +502,9 @@ enum CommandError {
     InterruptedError(ErrorInterruptStatus),
 }
 
-impl Slot {
+impl SdhciSlot {
     fn new(slot_num: u8, regs: *mut SlotRegisters) -> Self {
-        Slot { slot_num, regs }
+        SdhciSlot { slot_num, regs }
     }
 
     fn init(&mut self) -> Result<(), &'static str> {
@@ -986,7 +986,7 @@ impl Sdhci {
             pci_bus: bus,
             pci_dev: dev,
             pci_func: func,
-            slots: [Some(Slot::new(0, sdhci_base as *mut SlotRegisters)), None, None, None, None, None] 
+            slots: [Some(SdhciSlot::new(0, sdhci_base as *mut SlotRegisters)), None, None, None, None, None] 
         }
     }
 
