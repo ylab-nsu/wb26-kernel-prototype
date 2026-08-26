@@ -215,15 +215,27 @@ impl Emmc {
 
     // Init card and retrieve info about it
     fn new(sdhci_slot: Slot) -> Result<Self, EmmcError> {
+        // TODO: Set default frequency
+        // TODO: Reset card
+
         // Enable all interrupts statuses and clear them
         sdhci_slot.clear_all_interrupt_statuses();
         sdhci_slot.enable_all_interrupt_statuses();               
+
+        // Enable transfer complete interrupts signal and error signals
+        unsafe {
+            let normal_interrupt_signal_enable = &raw mut (*sdhci_slot.regs).normal_interrupt_signal_enable;
+            let normal_interrupt_signal_enable_val = read_volatile(normal_interrupt_signal_enable)
+                .with_transfer_complete(true);
+            write_volatile(normal_interrupt_signal_enable, normal_interrupt_signal_enable_val);
+        }
+        sdhci_slot.enable_all_error_signals();
 
         let rca: u16 = 1;
         let slot_ocr = Self::slot_capabilities_to_ocr(&sdhci_slot);
         let slot_ocr_as_bits = slot_ocr.into_bits();
 
-        // Wait untill card isn't busy with power up procedure
+        // Wait until card isn't busy with power up procedure
         let ocr = loop {
             // Send CMD1 - receive OCR
             let command = R3_COMMAND_PRESET
@@ -394,110 +406,122 @@ impl Emmc {
     }
 }
 
+fn main_routine(slot: Slot) -> Result<(), EmmcError> {
+    let mut emmc = Emmc::new(slot)?;
+
+    let mut current: Option<EmmcOp> = None;
+
+    // TODO: Check CSD:
+    // enable high speed and widest bus possible
+    // check block size
+
+    // TODO: REMOVE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! (it's test)
+    unsafe {
+        let buff = PhysicalAllocator::alloc_contiguous_aligned(512, 512).unwrap();
+        let buff_addr: usize = buff.addr().try_into().unwrap();
+        debug!("Allocated buffer for TEST: 0x{buff_addr:X}");
+        assert!(buff_addr < (1 << 32));
+        let buff = core::slice::from_raw_parts_mut(buff_addr as *mut u8, 512);
+        for byte in buff.iter_mut() {
+            *byte = 128;
+        }
+        put_into_queue(EmmcDriverMessage::Op(EmmcOp::Write { block_index: 0, address: buff_addr }), EMMC_DRIVER_QUEUE.as_view());
+        put_into_queue(EmmcDriverMessage::Op(EmmcOp::Read {block_index: 0, address: 0 }), EMMC_DRIVER_QUEUE.as_view());
+    }
+
+    loop {
+        unsafe {
+            if interupt_received {
+                match slot.wait_for_transfer_complete() {
+                    Ok(_) => { 
+                        info!("DMA completed");
+                        match current {
+                            Some(EmmcOp::Read { block_index: _, address: _} ) => {
+                                // TODO: Copy data from bounce buffer to address
+                                unsafe {
+                                    let data_ptr = TryInto::<usize>::try_into(emmc.bounce_buffer.addr()).unwrap() as *mut u8;
+                                    let data = core::slice::from_raw_parts(data_ptr, 512);
+                                    info!("READ: {:x?}", data);
+                                }
+                            },
+                            Some(EmmcOp::Write { block_index: _, address: _}) => {
+                                info!("Written data");
+                            },
+                            None => {},
+                        }
+                    },
+                    Err(err) => error!("DMA error: {}", err.into_bits()),
+                }
+
+                current = None;
+                interupt_received = false;
+            }
+        }
+
+        if current.is_none() {
+            let op = critical_section::with(|_| EMMC_DRIVER_QUEUE.dequeue());
+            match op {
+                None => {
+                    info!("Driver task yields");
+                    unsafe {
+                        EMMC_DRIVER_ANY = false;
+                    }
+                    reschedule();
+                    info!("Driver back to work");
+                },
+                Some(op) => {
+                    current = Some(op);
+                    match emmc.serve_op(op) {
+                        Ok(_) => {},
+                        Err(CommandError::IssuanceTimeout) => {
+                            error!("Slot {} issuance timeout", slot.slot_num);
+                            current = None;
+                        },
+                        Err(CommandError::InterruptedError(err)) => {
+                            error!("Slot {} inrerrupt error: {}", slot.slot_num, err.into_bits());
+                            current = None;
+                        },
+                    }
+                },
+            }
+        }
+        else {
+            info!("Driver task yields");
+            unsafe {
+                EMMC_DRIVER_ANY = false;
+            }
+            reschedule();
+            info!("Driver back to work");
+        }
+    }
+
+    Ok(())
+}
+
+fn try_recover(slot: Slot, err: EmmcRecoverableError) -> Result<(), EmmcUnrecoverableError> {
+    // TODO: Actually try to recover
+    Err(EmmcUnrecoverableError::Incompatible)
+}
 
 pub extern "C" fn driver_task() -> ! {
     unsafe {
-        let slot = crate::sdhci::host.as_mut().unwrap().slots[0];
+        // TODO: Get this structure from bus-driver using some id of device, to which driver is attached
+        // If there is no sdhci host or no 0th slot - panic
+        let slot = crate::sdhci::host.as_mut().unwrap().slots[0].unwrap();
 
-        if let Some(slot) = slot {
-            let mut emmc = Emmc::new(slot);
+        loop {
+            let res = main_routine(slot);
 
-            match emmc {
-                Ok(emmc) => {
-                    let mut current: Option<EmmcOp> = None;
+            let res = match res {
+                Err(EmmcError::Recoverable(err)) => try_recover(slot, err),
+                Err(EmmcError::Unrecoverable(err)) => Err(err),
+                Ok(_) => Ok(()),
+            };
 
-                    // TODO: Check CSD:
-                    // enable high speed and widest bus possible
-                    // check block size
-
-                    // Enable transfer complete interrupts signal and error signals
-                    unsafe {
-                        let normal_interrupt_signal_enable = &raw mut (*slot.regs).normal_interrupt_signal_enable;
-                        let normal_interrupt_signal_enable_val = read_volatile(normal_interrupt_signal_enable)
-                            .with_transfer_complete(true);
-                        write_volatile(normal_interrupt_signal_enable, normal_interrupt_signal_enable_val);
-                        slot.enable_all_error_signals();
-                    }
-
-                    // TODO: REMOVE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! (it's test)
-                    {
-                        let buff = PhysicalAllocator::alloc_contiguous_aligned(512, 512).unwrap();
-                        let buff_addr: usize = buff.addr().try_into().unwrap();
-                        debug!("Allocated buffer for TEST: 0x{buff_addr:X}");
-                        assert!(buff_addr < (1 << 32));
-                        let buff = core::slice::from_raw_parts_mut(buff_addr as *mut u8, 512);
-                        for byte in buff.iter_mut() {
-                            *byte = 128;
-                        }
-                        put_into_queue(EmmcDriverMessage::Op(EmmcOp::Write { block_index: 0, address: buff_addr }), EMMC_DRIVER_QUEUE.as_view());
-                        put_into_queue(EmmcDriverMessage::Op(EmmcOp::Read {block_index: 0, address: 0 }), EMMC_DRIVER_QUEUE.as_view());
-                    }
-
-                    loop { 
-                        if interupt_received {
-                            match slot.wait_for_transfer_complete() {
-                                Ok(_) => { 
-                                    info!("DMA completed");
-                                    match current {
-                                        Some(EmmcOp::Read { block_index: _, address: _} ) => {
-                                            // TODO: Copy data from bounce buffer to address
-                                            unsafe {
-                                                let data_ptr = TryInto::<usize>::try_into(emmc.bounce_buffer.addr()).unwrap() as *mut u8;
-                                                let data = core::slice::from_raw_parts(data_ptr, 512);
-                                                info!("READ: {:x?}", data);
-                                            }
-                                        },
-                                        Some(EmmcOp::Write { block_index: _, address: _}) => {
-                                            info!("Written data");
-                                        },
-                                        None => {},
-                                    }
-                                    current = None;
-                                    interupt_received = false;
-                                },
-                                Err(err) => error!("DMA error: {}", err.into_bits()),
-                            }
-                        }
-
-                        if current.is_none() {
-                            let op = critical_section::with(|_| EMMC_DRIVER_QUEUE.dequeue());
-                            match op {
-                                None => {
-                                    info!("Driver task yields");
-                                    unsafe {
-                                        EMMC_DRIVER_ANY = false;
-                                    }
-                                    reschedule();
-                                    info!("Driver back to work");
-                                },
-                                Some(op) => {
-                                    current = Some(op);
-                                    match emmc.serve_op(op) {
-                                        Ok(_) => {},
-                                        Err(CommandError::IssuanceTimeout) => {
-                                            error!("Slot {} issuance timeout", slot.slot_num);
-                                            current = None;
-                                        },
-                                        Err(CommandError::InterruptedError(err)) => {
-                                            error!("Slot {} inrerrupt error: {}", slot.slot_num, err.into_bits());
-                                            current = None;
-                                        },
-                                    }
-                                },
-                            }
-                        }
-                        else {
-                            info!("Driver task yields");
-                            unsafe {
-                                EMMC_DRIVER_ANY = false;
-                            }
-                            reschedule();
-                            info!("Driver back to work");
-                        }
-                    }
-                },
-                // TODO: Do error-recovery if possible
-                Err(err) => error!("Slot {} error: {:?}", slot.slot_num, err),
+            // Unrecoverable error encountered
+            if let Err(err) = res {
+                error!("SDHCI slot {} unrecoverable error: {:?}", slot.slot_num, err);
+                break;
             }
         }
     }
