@@ -217,7 +217,6 @@ struct Emmc {
 }
 
 impl Emmc {
-
     // Init card and retrieve info about it
     fn new(sdhci_slot: Slot) -> Result<Self, EmmcError> {
         // Enable all interrupts statuses and clear them
@@ -432,14 +431,16 @@ fn main_routine(slot: Slot) -> Result<(), EmmcError> {
     unsafe {
         let buff = PhysicalAllocator::alloc_contiguous_aligned(512, 512).unwrap();
         let buff_addr: usize = buff.addr().try_into().unwrap();
+
         debug!("Allocated buffer for TEST: 0x{buff_addr:X}");
         assert!(buff_addr < (1 << 32));
+
         let buff = core::slice::from_raw_parts_mut(buff_addr as *mut u8, 512);
         for byte in buff.iter_mut() {
             *byte = 128;
         }
         put_into_queue(EmmcDriverMessage::Op(EmmcOp::Write { block_index: 0, address: buff_addr }), EMMC_DRIVER_QUEUE.as_view());
-        put_into_queue(EmmcDriverMessage::Op(EmmcOp::Read {block_index: 0, address: 0 }), EMMC_DRIVER_QUEUE.as_view());
+        put_into_queue(EmmcDriverMessage::Op(EmmcOp::Read {block_index: 0, address: buff_addr }), EMMC_DRIVER_QUEUE.as_view());
     }
 
     loop {
@@ -449,13 +450,12 @@ fn main_routine(slot: Slot) -> Result<(), EmmcError> {
                     Ok(_) => { 
                         info!("DMA completed");
                         match current {
-                            Some(EmmcOp::Read { block_index: _, address: _} ) => {
-                                // TODO: Copy data from bounce buffer to address
-                                unsafe {
-                                    let data_ptr = TryInto::<usize>::try_into(emmc.bounce_buffer.addr()).unwrap() as *mut u8;
-                                    let data = core::slice::from_raw_parts(data_ptr, 512);
-                                    info!("READ: {:x?}", data);
-                                }
+                            Some(EmmcOp::Read { block_index: _, address: address} ) => {
+                                let bounce_buffer = core::slice::from_raw_parts(TryInto::<usize>::try_into(emmc.bounce_buffer.addr()).unwrap() as *const u8, emmc.block_size as usize);
+                                let data_buffer = core::slice::from_raw_parts_mut(address as *mut u8, emmc.block_size as usize);
+                                data_buffer.copy_from_slice(bounce_buffer);
+
+                                info!("READ: {:x?}", data_buffer);
                             },
                             Some(EmmcOp::Write { block_index: _, address: _}) => {
                                 info!("Written data");
