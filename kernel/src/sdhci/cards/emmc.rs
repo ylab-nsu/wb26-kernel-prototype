@@ -88,21 +88,51 @@ enum AccessMode {
 }
 
 #[derive(Debug)]
-pub enum EmmcInitializationError {
+pub enum EmmcUnrecoverableError {
     CommandError(CommandError),
     AllocatorError(AllocatorError),
     Incompatible,                   // Card is incompatible with host
+}
+
+#[derive(Debug)]
+pub enum EmmcRecoverableError {
     InvalidConditions(Ocr),         // The host is compatible with card, but must change it's mode
 }
 
-impl From<CommandError> for EmmcInitializationError {
+#[derive(Debug)]
+pub enum EmmcError {
+    Recoverable(EmmcRecoverableError),
+    Unrecoverable(EmmcUnrecoverableError),
+}
+
+impl From<CommandError> for EmmcUnrecoverableError {
     fn from(err: CommandError) -> Self {
-        return EmmcInitializationError::CommandError(err);
+        return EmmcUnrecoverableError::CommandError(err);
     }
 }
-impl From<AllocatorError> for EmmcInitializationError {
+impl From<AllocatorError> for EmmcUnrecoverableError {
     fn from(err: AllocatorError) -> Self {
-        return EmmcInitializationError::AllocatorError(err);
+        return EmmcUnrecoverableError::AllocatorError(err);
+    }
+}
+impl From<CommandError> for EmmcError {
+    fn from(err: CommandError) -> Self {
+        return EmmcError::Unrecoverable(EmmcUnrecoverableError::CommandError(err));
+    }
+}
+impl From<AllocatorError> for EmmcError {
+    fn from(err: AllocatorError) -> Self {
+        return EmmcError::Unrecoverable(EmmcUnrecoverableError::AllocatorError(err));
+    }
+}
+impl From<EmmcRecoverableError> for EmmcError {
+    fn from(err: EmmcRecoverableError) -> Self {
+        return EmmcError::Recoverable(err);
+    }
+}
+impl From<EmmcUnrecoverableError> for EmmcError {
+    fn from(err: EmmcUnrecoverableError) -> Self {
+        return EmmcError::Unrecoverable(err);
     }
 }
 
@@ -184,7 +214,7 @@ struct Emmc {
 impl Emmc {
 
     // Init card and retrieve info about it
-    fn new(sdhci_slot: Slot) -> Result<Self, EmmcInitializationError> {
+    fn new(sdhci_slot: Slot) -> Result<Self, EmmcError> {
         // Enable all interrupts statuses and clear them
         sdhci_slot.clear_all_interrupt_statuses();
         sdhci_slot.enable_all_interrupt_statuses();               
@@ -213,11 +243,11 @@ impl Emmc {
 
         // If slot is incompatible with card
         if !ocr.compatible_with(&slot_ocr) {
-            return Err(EmmcInitializationError::Incompatible);
+            return Err(EmmcError::Unrecoverable(EmmcUnrecoverableError::Incompatible));
         }
         // If slot is compatible, but must change its' voltage
         if !ocr.runs_in_compatible_conditions(&sdhci_slot) {
-            return Err(EmmcInitializationError::InvalidConditions(ocr));
+            return Err(EmmcError::Recoverable(EmmcRecoverableError::InvalidConditions(ocr)));
         }
 
         let access_mode = ocr.access_mode();
@@ -242,10 +272,6 @@ impl Emmc {
 
         // TODO: Struct/bitfield for status interpreting
         info!("Slot {} state {}", sdhci_slot.slot_num, (status >> 8) & 0b1111);
-
-        // TODO: Check CSD:
-        // enable high speed and widest bus possible
-        // check block size
 
         let command = R1_COMMAND_PRESET
             .with_data_present(false)
@@ -379,6 +405,10 @@ pub extern "C" fn driver_task() -> ! {
             match emmc {
                 Ok(emmc) => {
                     let mut current: Option<EmmcOp> = None;
+
+                    // TODO: Check CSD:
+                    // enable high speed and widest bus possible
+                    // check block size
 
                     // Enable transfer complete interrupts signal and error signals
                     unsafe {
