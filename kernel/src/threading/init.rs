@@ -3,7 +3,7 @@ use crate::drivers::driver_task;
 use crate::threading::thread::{
     create_empty_thread, get_thread, spawn_kernel, spawn_user, THREADS_INDEXES,
 };
-use crate::drivers_::uart::{uart_driver, terminal_task};
+use crate::drivers_::uart::{terminal_task, uart_driver, uart16550_rw_test};
 use core::arch::global_asm;
 
 pub static mut NEXT_USER_STACK: usize = 0x47000000;

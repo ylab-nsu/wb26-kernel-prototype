@@ -40,12 +40,26 @@ impl<const N: usize> UART16550<N> {
         write_reg(
             self.addr,
             Register::Fcr,
-            Masks::FCR_ENABLE_FIFO
-                | Masks::FCR_RX_CLEAR_FIFO
-                | Masks::FCR_TX_CLEAR_FIFO
-                | trigger_mask,
+            Masks::FCR_ENABLE_FIFO 
+                | Masks::FCR_RX_CLEAR_FIFO 
+                | Masks::FCR_TX_CLEAR_FIFO 
+                | trigger_mask,          
         );
     }
+
+	pub fn get_addr(&self) -> usize {
+		self.addr
+	}
+
+	pub fn enable_loopback(&self) -> () {
+		let mcr = read_reg(self.addr, Register::Mcr);
+		write_reg(self.addr, Register::Mcr, mcr | Masks::MCR_LOOPBACK);
+	}
+
+	pub fn disable_loopback(&self) -> () {
+		let mcr = read_reg(self.addr, Register::Mcr);
+		write_reg(self.addr, Register::Mcr, mcr & !Masks::MCR_LOOPBACK);
+	}
 
     pub fn enable_rx_interrupt(&self) {
         let ier = read_reg(self.addr, Register::Ier);
@@ -166,7 +180,7 @@ impl<const N: usize> UART16550<N> {
 
 
 	fn fill_tx_fifo(&mut self) {
-		  // Проверяем, что UART готов принять данные
+		  // UART готов принять данные
         let lsr = read_reg(self.addr, Register::Lsr);
 
         if lsr & Masks::LSR_THR_EMPTY == 0 {

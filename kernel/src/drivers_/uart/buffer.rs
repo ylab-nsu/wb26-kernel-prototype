@@ -1,8 +1,10 @@
 
+#[derive(Debug)]
 pub enum RingBufferReadError {
     Empty,
 }
 
+#[derive(Debug)]
 pub enum RingBufferWriteError {
     Overflow,
 }

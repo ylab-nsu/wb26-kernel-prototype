@@ -76,8 +76,6 @@ pub fn write_reg(addr: usize, reg: Register, value: u8) {
 }
 
 pub struct Masks;
-const BUFFER_SIZE: usize = 256;
-const MAX_RECEVIED_BYTES: usize = 16;
 pub const TX_FIFO_SIZE: usize = 16;
 
 impl Masks {
@@ -119,5 +117,8 @@ impl Masks {
 	pub const LCR_PARITY_NONE: u8 = 0;
 	pub const LCR_PARITY_EVEN: u8 = 0b11 << 3;
 	pub const LCR_PARITY_ODD:  u8 = 0b01 << 3;
+
+	// MCR bits
+	pub const MCR_LOOPBACK: u8 = 1 << 4;
 
 }

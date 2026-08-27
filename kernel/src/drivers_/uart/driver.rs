@@ -7,6 +7,7 @@ use riscv::_export::critical_section;
 use super::message::{UartDriverMessage, MAX_RECEVIED_BYTES};
 use super::uart16550::UART;
 use super::registers::{read_reg, Register, Masks};
+use super::test::read_cycle;
 
 pub fn get_interrupt_reason_from(addr:usize) -> Option<UartDriverMessage>{
 	let iir = read_reg(addr, Register::Iir);
@@ -68,17 +69,27 @@ pub extern "C" fn uart_driver() -> ! {
         match message {
 			
             Some(UartDriverMessage::Receive { data }) => {
-				println!("RX IRQ!");
 				critical_section::with(|cs|{
+					let start = read_cycle();
+
+					let end = read_cycle();
+
+					println!("empty: {} cycles", end - start);
+
 					let mut uart = UART.borrow(cs).borrow_mut();
+					let start =  read_cycle();
 					uart.handle_rx_interrupt(&data);
+					let end = read_cycle();
+					println!("handle_rx_interrupt: {} cycles", end - start);
 				});
             }
             Some(UartDriverMessage::Send) => {
-				println!("TX IRQ!");
 				critical_section::with(|cs|{
 					let mut uart = UART.borrow(cs).borrow_mut();
+					let start =  read_cycle();
 					uart.handle_tx_interrupt();
+					let end = read_cycle();
+					println!("handle_tx_interrupt: {} cycles", end - start);
 				});
             }
             Some(UartDriverMessage::LineStatus) => {}

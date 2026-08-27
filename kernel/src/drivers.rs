@@ -56,7 +56,7 @@ pub extern "C" fn driver_task() -> ! {
         let message = critical_section::with(|_| TEST_DRIVER_QUEUE.dequeue());
         match message {
             None => {
-                info!("Driver task yields");
+                //info!("Driver task yields");
                 unsafe {
                     TEST_DRIVER_ANY = false;
                 }
