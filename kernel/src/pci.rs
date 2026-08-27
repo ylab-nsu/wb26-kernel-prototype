@@ -1,6 +1,12 @@
 use alloc::vec::Vec;
 use crate::arch::traits::{ TargetPciBus, TargetInterruptController };
-use crate::arch::{ PciBus, InterruptController };
+
+#[cfg(not(feature = "kernel-tests"))]
+use crate::arch::{InterruptController, PciBus};
+#[cfg(feature = "kernel-tests")]
+use crate::tests::mocks::pci::MockPciBus as PciBus;
+#[cfg(feature = "kernel-tests")]
+use crate::tests::mocks::plic::MockInterruptController as InterruptController;
 
 // Standard PCI Configuration Space offsets
 pub const PCI_VENDOR_DEVICE_REG: u16 = 0x00;
@@ -39,9 +45,9 @@ pub struct PciDeviceInfo {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct MemoryBar {
-    size: usize,
-    flags: u32,
+pub struct MemoryBar {
+    pub size: usize,
+    pub flags: u32,
 }
 
 pub static mut PCI_DEVICES: Vec<PciDeviceInfo> = Vec::new();
@@ -110,7 +116,7 @@ pub fn pci_function_is_present(bus: u8, dev: u8, func: u8) -> bool {
     vendor_id != 0xFFFF
 }
 
-fn probe_bar0(bus: u8, dev: u8, func: u8) -> Option<MemoryBar> {
+pub fn probe_bar0(bus: u8, dev: u8, func: u8) -> Option<MemoryBar> {
     let original = PciBus::pci_read32(bus, dev, func, PCI_BAR0_REG);
 
     if original & PCI_BAR_IO_SPACE != 0 {
@@ -164,7 +170,7 @@ fn probe_bar0(bus: u8, dev: u8, func: u8) -> Option<MemoryBar> {
     })
 }
 
-fn align_up(address: usize, alignment: usize) -> Option<usize> {
+pub fn align_up(address: usize, alignment: usize) -> Option<usize> {
     if alignment == 0 || !alignment.is_power_of_two() {
         return None;
     }
@@ -174,7 +180,7 @@ fn align_up(address: usize, alignment: usize) -> Option<usize> {
         .map(|value| value & !(alignment - 1))
 }
 
-fn allocate_mmio(next_mmio_address: &mut usize, size: usize) -> Option<usize> {
+pub fn allocate_mmio(next_mmio_address: &mut usize, size: usize) -> Option<usize> {
     let mmio_end = PciBus::mmio_base().checked_add(PciBus::mmio_size())?;
     let address = align_up(*next_mmio_address, size)?;
     let end = address.checked_add(size)?;
@@ -187,7 +193,7 @@ fn allocate_mmio(next_mmio_address: &mut usize, size: usize) -> Option<usize> {
     Some(address)
 }
 
-fn configure_bar0(
+pub fn configure_bar0(
     bus: u8,
     dev: u8,
     func: u8,

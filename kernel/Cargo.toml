@@ -12,6 +12,8 @@ test = false
 doctest = false
 bench = false
 
+[features]
+kernel-tests = []
 
 [dependencies]
 #spin = "0.10.0"

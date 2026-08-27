@@ -18,6 +18,9 @@ pub mod vm;
 pub mod pci;
 pub mod sdhci;
 
+#[cfg(feature = "kernel-tests")]
+mod tests;
+
 use core::panic::PanicInfo;
 
 use crate::arch::{traits::TargetPlatform, Platform};
@@ -25,15 +28,24 @@ use crate::boot::BootContext;
 use crate::threading::init::setup_threads;
 
 pub fn kernel_main(_ctx: BootContext) -> ! {
-    info!("Starting kernel (kernel_main())");
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "kernel-tests")] {
+            info!("Starting kernel tests (kernel_main())");
+            tests::run_kernel_tests();
 
-    setup_threads();
-    unsafe {
-        Platform::ei();
-    }
+            loop { }
+        } else {
+            info!("Starting kernel (kernel_main())");
 
-    loop {
-        Platform::wfi();
+            setup_threads();
+            unsafe {
+                Platform::ei();
+            }
+
+            loop {
+                Platform::wfi();
+            }
+        }
     }
 }
 
