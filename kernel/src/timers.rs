@@ -107,8 +107,6 @@ pub struct BenchRun {
     cycles: u64,
     time: Duration,
     count: u64,
-    lattency: Duration,
-    lattency_count: u64,
 }
 
 impl BenchRun {
@@ -117,8 +115,6 @@ impl BenchRun {
             cycles,
             time,
             count: 1,
-            lattency: Duration::from_micros(0),
-            lattency_count: 0,
         }
     }
 
@@ -127,27 +123,19 @@ impl BenchRun {
             cycles: self.cycles / self.count,
             time: self.time / self.count as u32,
             count: self.count,
-            lattency: self.lattency / self.lattency_count as u32,
-            lattency_count: self.lattency_count,
         }
     }
 
-    pub fn record_lattency(&mut self, lattency: Duration) {
-        self.lattency += lattency;
-        self.lattency_count += 1;
-    }
 }
 
 impl Display for BenchRun {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "Cycles: {}, Time: {} ms, across {} interrupts; lattency {} ms across {} records",
+            "Cycles: {}, Time: {} ms, across {} interrupts;",
             self.cycles,
             self.time.as_millis(),
             self.count,
-            self.lattency.as_millis(),
-            self.lattency_count
         )
     }
 }
@@ -165,6 +153,43 @@ pub static BENCH_RUNS: Mutex<BenchRun> = Mutex::new(BenchRun {
     cycles: 0,
     time: Duration::from_micros(0),
     count: 0,
-    lattency: Duration::from_micros(0),
-    lattency_count: 0,
 });
+pub static BENCH_STEADY: Mutex<BenchLattency> = Mutex::new(BenchLattency { latency: Duration::from_micros(0), count: 0 });
+pub static BENCH_SPIKE: Mutex<BenchLattency> = Mutex::new(BenchLattency { latency: Duration::from_micros(0), count: 0 });
+
+pub struct BenchLattency {
+    latency: Duration,
+    count: u64,
+}
+
+impl BenchLattency {
+    pub fn new(latency: Duration) -> Self {
+        Self {
+            latency,
+            count: 1,
+        }
+    }
+
+    pub fn average(&mut self) -> BenchLattency {
+        BenchLattency {
+            latency: self.latency / self.count as u32,
+            count: self.count,
+        }
+    }
+
+    pub fn record(&mut self, latency: Duration) {
+        self.latency += latency;
+        self.count += 1;
+    }
+}
+
+impl Display for BenchLattency {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "Latency: {} ms, across {} records;",
+            self.latency.as_millis(),
+            self.count,
+        )
+    }
+}

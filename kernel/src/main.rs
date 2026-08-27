@@ -20,114 +20,139 @@ pub mod vm;
 use core::panic::PanicInfo;
 
 use crate::arch::traits::TargetTimerQueue;
-use crate::arch::{traits::{TargetPlatform, TargetInstant}, Platform, TimerQueue, PlatformInstant};
+use crate::arch::{
+    traits::{TargetInstant, TargetPlatform},
+    Platform, PlatformInstant, TimerQueue,
+};
 use crate::boot::BootContext;
 use crate::threading::init::setup_threads;
 use core::time::Duration;
 use sync::Mutex;
-use timers::{TimerCallback, TimerCallbackContext, BENCH_RUNS};
+use timers::{TimerCallback, TimerCallbackContext, BENCH_RUNS, BENCH_SPIKE, BENCH_STEADY};
+
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+// Separate accumulators so burst impact on steady timers is visible
+static BENCH_RUNNING: AtomicBool = AtomicBool::new(true);
+static RNG_STATE: AtomicU64 = AtomicU64::new(0x9E3779B97F4A7C15); // any nonzero seed
 
 fn setup_reschedule_timer() {
     TimerQueue::add_repeating_timer(Duration::from_secs(1).into(), TimerCallback::reschedule());
-    const BENCH_COUNT: u64 = 50;
-    const BENCH_BASE: Duration = Duration::from_secs(1);
 
-    // Print result once all bench timers have had a chance to fire
+    const STEADY_POPULATION: usize = 50;
+    const STEADY_MIN_DELAY_US: u64 = 500; // 0.5ms
+    const STEADY_MAX_DELAY_US: u64 = 50_000; // 50ms
+    const SPIKE_INTERVAL: Duration = Duration::from_millis(750);
+    const SPIKE_SIZE: usize = 15; // extra timers landing together
+    const BENCH_DURATION: Duration = Duration::from_secs(10);
+
+    /// Small atomic xorshift64 — fine for jitter, not for anything crypto-adjacent.
+    fn next_rand() -> u64 {
+        let mut x = RNG_STATE.load(Ordering::Relaxed);
+        loop {
+            let mut y = x;
+            y ^= y << 13;
+            y ^= y >> 7;
+            y ^= y << 17;
+            match RNG_STATE.compare_exchange_weak(x, y, Ordering::Relaxed, Ordering::Relaxed) {
+                Ok(_) => return y,
+                Err(actual) => x = actual,
+            }
+        }
+    }
+
+    fn rand_range_us(min: u64, max: u64) -> u64 {
+        min + (next_rand() % (max - min))
+    }
+
+    /// One steady-state timer: records its own fire latency, then re-arms
+    /// itself at a new random deadline to keep the queue population stable.
+    fn schedule_steady_timer() {
+        let delay =
+            Duration::from_micros(rand_range_us(STEADY_MIN_DELAY_US, STEADY_MAX_DELAY_US)).into();
+        let scheduled_at = PlatformInstant::now();
+        let deadline = scheduled_at + delay;
+
+        let _ = TimerQueue::add_oneshot_timer(
+            delay,
+            TimerCallback::immediate(move |_| {
+                let latency = PlatformInstant::now() - deadline;
+                BENCH_STEADY.lock().record(latency.into());
+
+                if BENCH_RUNNING.load(Ordering::Relaxed) {
+                    schedule_steady_timer(); // re-arm from ISR context, as in real usage
+                }
+            }),
+        );
+    }
+
+    /// A burst: N timers all targeting (approximately) the same deadline,
+    /// to see how dispatch latency degrades under contention.
+    fn schedule_spike_burst() {
+        let deadline = PlatformInstant::now() + Duration::from_millis(200).into();
+        let now = PlatformInstant::now();
+        let delta = deadline - now;
+
+        for _ in 0..SPIKE_SIZE {
+            let _ = TimerQueue::add_oneshot_timer(
+                delta.into(),
+                TimerCallback::immediate(move |_| {
+                    let latency = PlatformInstant::now() - deadline;
+                    BENCH_SPIKE.lock().record(latency.into());
+                }),
+            );
+        }
+    }
+
+    /// Recurring scheduler that fires the next spike burst until the bench window closes.
+    fn schedule_next_spike() {
+        let _ = TimerQueue::add_oneshot_timer(
+            SPIKE_INTERVAL.into(),
+            TimerCallback::immediate(move |_| {
+                if BENCH_RUNNING.load(Ordering::Relaxed) {
+                    schedule_spike_burst();
+                    schedule_next_spike();
+                }
+            }),
+        );
+    }
+
+    // --- Kick off the benchmark ---
+
+    // Stop condition: flip the flag so in-flight callbacks stop re-arming,
+    // then print both distributions.
     TimerQueue::add_oneshot_timer(
-        Duration::from_secs(10).into(),
+        BENCH_DURATION.into(),
         TimerCallback::immediate(|_| {
+            BENCH_RUNNING.store(false, Ordering::Relaxed);
+
+            let mut steady = BENCH_STEADY.lock();
+            steady.average();
+            info!(
+                "-------- Steady-state latency (n~{}): {}",
+                STEADY_POPULATION, steady
+            );
+
+            let mut spike = BENCH_SPIKE.lock();
+            spike.average();
+            info!(
+                "-------- Burst latency ({} timers/burst): {}",
+                SPIKE_SIZE, spike
+            );
+
             let mut lock = BENCH_RUNS.lock();
             lock.average();
             info!("-------- Bench runs: {}", lock);
         }),
     );
 
-    // Test: schedule N timers, each recording only its own fire-latency
-    for i in 0..BENCH_COUNT {
-        let requested_delay = BENCH_BASE + Duration::from_micros(i);
-        let scheduled_at = PlatformInstant::now();
-        let deadline = scheduled_at + requested_delay.into();
-
-        let _ = TimerQueue::add_oneshot_timer(
-            requested_delay.into(),
-            TimerCallback::immediate(move |_| {
-                let fired_at = PlatformInstant::now();
-                let latency = fired_at - deadline;
-                BENCH_RUNS.lock().record_lattency(latency.into());
-            }),
-        );
+    // Seed the steady population
+    for _ in 0..STEADY_POPULATION {
+        schedule_steady_timer();
     }
-    // TimerQueue::add_repeating_timer(
-    //     Duration::from_secs(1).into(),
-    //     TimerCallback::immediate(|_| info!("1 Second timer")),
-    // );
-    // // One shot timer
-    // TimerQueue::add_oneshot_timer(
-    //     Duration::from_secs(10).into(),
-    //     TimerCallback::immediate(|_| info!("10 second oneshot timer")),
-    // );
-    // // Repeating timer with inner state
-    // TimerQueue::add_repeating_timer(
-    //     Duration::from_secs(3).into(),
-    //     TimerCallback::immediate(|_| {
-    //         static COUNT: Mutex<u32> = Mutex::new(0);
-    //         let mut count = COUNT.lock();
-    //         *count += 1;
-    //         info!(
-    //             "3 Second stateful timer {}",
-    //             count
-    //         )
-    //     }),
-    // );
-    // // Reschedule timer
-    // // TimerQueue::add_repeating_timer(Duration::from_secs(1).into(), TimerCallback::Reschedule);
-    // // One shot repeating timer
-    // fn oneshot_repeating_callback(_: TimerCallbackContext) {
-    //     info!("One shot repeating timer");
-    //     TimerQueue::add_oneshot_timer(
-    //         Duration::from_secs(2).into(),
-    //         TimerCallback::immediate(oneshot_repeating_callback),
-    //     );
-    // }
-    // TimerQueue::add_oneshot_timer(
-    //     Duration::from_secs(2).into(),
-    //     TimerCallback::immediate(oneshot_repeating_callback),
-    // );
-    // // One shot timer with capture
-    // let to_capture = 5;
-    // TimerQueue::add_oneshot_timer(
-    //     Duration::from_secs(4).into(),
-    //     TimerCallback::immediate(move |_| {
-    //         info!(
-    //             "-------------------------- One shot timer with capture {}",
-    //             to_capture
-    //         );
-    //     }),
-    // );
-    // // One shot timer with mutable capture
-    // let mut to_capture_mutable = 10;
-    // TimerQueue::add_repeating_timer(
-    //     Duration::from_secs(4).into(),
-    //     TimerCallback::immediate(move |_| {
-    //         info!(
-    //             "-------------------------- One shot timer with mut capture {}",
-    //             to_capture_mutable
-    //         );
-    //         to_capture_mutable += 1;
-    //     }),
-    // );
-    // // Stop timer with handle
-    // let handle = TimerQueue::add_repeating_timer(Duration::from_secs(2).into(), TimerCallback::immediate(|_| {
-    //     info!("1 second timer");
-    // }));
-    // TimerQueue::add_oneshot_timer(Duration::from_secs(5).into(), TimerCallback::immediate( move |_| {
-    //     if let Some(handle) = handle.upgrade() {
-    //         handle.stop();
-    //         info!("timer stopped");
-    //     } else {
-    //         info!("timer already stopped");
-    //     }
-    // }));
+
+    // Kick off the recurring spike generator
+    schedule_next_spike();
 }
 
 pub fn kernel_main(_ctx: BootContext) -> ! {
