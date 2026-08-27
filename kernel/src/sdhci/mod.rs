@@ -3,6 +3,7 @@ pub mod sdhci_command;
 pub mod sdhci_interface;
 
 use sdhci_command::*;
+use core::sync::atomic::{ fence, Ordering };
 use crate::pci::{ pci_enable_device, pci_enable_interrupt, pci_enable_bus_mastering, PCI_BAR0_REG };
 use crate::arch::traits::TargetPciBus;
 use crate::arch::PciBus;
@@ -12,7 +13,7 @@ use sdhci_interface::*;
 #[cfg(feature = "kernel-unit-tests")]
 use crate::tests::mocks::sdhci_interface::MockSdhciInterface as SdhciInterface;
 #[cfg(feature = "kernel-unit-tests")]
-use sdhci_interface::{ SdhciCommandDesc, SdhciCommandType, SdhciResponseType, SdhciTransferMode, SdhciTransferingDirection, SdhciBlockSize, SdhciOperatingVoltage, SdhciMaxBlockLength, SdhciTimeoutClockUnit, SdhciNormalInterruptStatus, SdhciSlotRegisters, SdhciErrorInterruptStatus, SdhciErrorInterruptSignalEnable, SdhciNormalInterruptStatusEnable, SdhciErrorInterruptStatusEnable };
+use sdhci_interface::{ SdhciCommandDesc, SdhciCommandType, SdhciResponseType, SdhciTransferMode, SdhciTransferingDirection, SdhciBlockSize, SdhciOperatingVoltage, SdhciMaxBlockLength, SdhciTimeoutClockUnit, SdhciNormalInterruptStatus, SdhciSlotRegisters, SdhciErrorInterruptStatus, SdhciErrorInterruptSignalEnable, SdhciNormalInterruptStatusEnable, SdhciErrorInterruptStatusEnable, SdhciDmaMode };
 
 // Bus-specific data about device attached to it
 #[derive(Copy, Clone)]
@@ -294,12 +295,30 @@ impl SdhciSlot {
                 match &transfer.data_transfer_kind {
                     SdhciDataTransferKind::CpuTransfer => {},
                     SdhciDataTransferKind::DmaTransfer(transfer) => {
-                        self.sdhci_interface.set_sdma_address(transfer.sdma_address);
+                        match transfer {
+                            SdhciDmaTransfer::Sdma { address } => {
+                                let host_control = self.sdhci_interface.host_control()
+                                    .with_dma_mode(SdhciDmaMode::SDMA);
+                                self.sdhci_interface.set_host_control(host_control);
+                                self.sdhci_interface.set_sdma_address(*address);
+                            },
+                            SdhciDmaTransfer::Adma2 { descriptor_table_address } => {
+                                if !self.sdhci_interface.capabilities().adma2_support() {
+                                    return Err(SdhciError::Incompatible);
+                                }
+
+                                let host_control = self.sdhci_interface.host_control()
+                                    .with_dma_mode(SdhciDmaMode::ADMA2_32);
+                                self.sdhci_interface.set_host_control(host_control);
+                                self.sdhci_interface.set_adma_address(*descriptor_table_address);
+                            },
+                        }
                     },
                 }
             },
         }
 
+        fence(Ordering::SeqCst);
         self.sdhci_interface.set_argument(command.argument);
         self.sdhci_interface.set_command(command.command_desc);
 
@@ -364,6 +383,7 @@ impl SdhciSlot {
             else if normal_int_status.transfer_complete() {
                 let normal_int_status = SdhciNormalInterruptStatus::new().with_transfer_complete(true);
                 self.sdhci_interface.set_normal_interrupt_status(normal_int_status);
+                fence(Ordering::SeqCst);
 
                 return Ok(());
             }
