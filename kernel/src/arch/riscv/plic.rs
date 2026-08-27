@@ -1,5 +1,4 @@
 use crate::arch::traits::TargetInterruptController;
-use core::ptr::{read_volatile, write_volatile};
 
 pub struct RiscvInterruptController;
 

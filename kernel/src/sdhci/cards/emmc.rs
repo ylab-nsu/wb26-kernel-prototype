@@ -1,6 +1,6 @@
 use crate::allocator::AllocatorError;
-use crate::arch::{ PhysicalAllocation, PhysicalAllocator, PhysicalAddress };
-use crate::arch::traits::{ TargetPhysicalAllocation, TargetPhysicalAllocator, TargetAddress };
+use crate::arch::{ PhysicalAllocation, PhysicalAllocator };
+use crate::arch::traits::{ TargetPhysicalAllocation, TargetPhysicalAllocator };
 use crate::threading::scheduler::reschedule;
 use heapless::mpmc;
 use riscv::_export::critical_section;
@@ -46,17 +46,16 @@ pub enum EmmcDriverMessage {
 }
 
 #[allow(deprecated)]
-pub static mut interupt_received: bool = false;
 pub static EMMC_DRIVER_QUEUE: mpmc::Queue<EmmcOp, 32> = mpmc::Queue::new();
+pub static mut INTERRUPT_RECEIVED: bool = false;
 pub static mut EMMC_DRIVER_ANY: bool = true;
 
 pub fn put_into_queue(message: EmmcDriverMessage, queue: &mpmc::QueueView<EmmcOp>) {
-    let mut message = message;
     match message {
         // Out-of-band message
         EmmcDriverMessage::Interrupt => {
             unsafe {
-                interupt_received = true;
+                INTERRUPT_RECEIVED = true;
             }
         },
         // In-band message
@@ -143,26 +142,26 @@ impl From<EmmcUnrecoverableError> for EmmcError {
 
 // Operation Conditions Register
 #[bitfield(u32)]
-struct Ocr {
+pub struct Ocr {
     #[bits(7)]
     __: usize,
-    from_1_70V_to_1_95V: bool,
-    V2_0: bool,
-    V2_1: bool,
-    V2_2: bool,
-    V2_3: bool,
-    V2_4: bool,
-    V2_5: bool,
-    V2_6: bool,
-    V2_7: bool,
-    V2_8: bool,
-    V2_9: bool,
-    V3_0: bool,
-    V3_1: bool,
-    V3_2: bool,
-    V3_3: bool,
-    V3_4: bool,
-    V3_5: bool,
+    from_1_70_v_to_1_95_v: bool,
+    v2_0: bool,
+    v2_1: bool,
+    v2_2: bool,
+    v2_3: bool,
+    v2_4: bool,
+    v2_5: bool,
+    v2_6: bool,
+    v2_7: bool,
+    v2_8: bool,
+    v2_9: bool,
+    v3_0: bool,
+    v3_1: bool,
+    v3_2: bool,
+    v3_3: bool,
+    v3_4: bool,
+    v3_5: bool,
     #[bits(5)]
     __: usize,
     #[bits(2)]
@@ -174,35 +173,33 @@ impl Ocr {
     // If two ocr values are compatible
     fn compatible_with(&self, other: &Self) -> bool {
         // No bitmasks today in order to be able to change fields order 
-        self.from_1_70V_to_1_95V() && other.from_1_70V_to_1_95V() || 
-        self.V2_0() && other.V2_0() || 
-        self.V2_1() && other.V2_1() || 
-        self.V2_2() && other.V2_2() || 
-        self.V2_3() && other.V2_3() || 
-        self.V2_4() && other.V2_4() || 
-        self.V2_5() && other.V2_5() || 
-        self.V2_6() && other.V2_6() || 
-        self.V2_7() && other.V2_7() || 
-        self.V2_8() && other.V2_8() || 
-        self.V2_9() && other.V2_9() || 
-        self.V3_0() && other.V3_0() || 
-        self.V3_1() && other.V3_1() || 
-        self.V3_2() && other.V3_2() || 
-        self.V3_3() && other.V3_3() || 
-        self.V3_4() && other.V3_4() || 
-        self.V3_5() && other.V3_5()
+        self.from_1_70_v_to_1_95_v() && other.from_1_70_v_to_1_95_v() || 
+        self.v2_0() && other.v2_0() || 
+        self.v2_1() && other.v2_1() || 
+        self.v2_2() && other.v2_2() || 
+        self.v2_3() && other.v2_3() || 
+        self.v2_4() && other.v2_4() || 
+        self.v2_5() && other.v2_5() || 
+        self.v2_6() && other.v2_6() || 
+        self.v2_7() && other.v2_7() || 
+        self.v2_8() && other.v2_8() || 
+        self.v2_9() && other.v2_9() || 
+        self.v3_0() && other.v3_0() || 
+        self.v3_1() && other.v3_1() || 
+        self.v3_2() && other.v3_2() || 
+        self.v3_3() && other.v3_3() || 
+        self.v3_4() && other.v3_4() || 
+        self.v3_5() && other.v3_5()
     }
 
     // If current slot voltage is compatible with OCR
     fn runs_in_compatible_conditions(&self, slot: &SdhciSlot) -> bool {
-        unsafe {
-            let power_ctl = slot.sdhci_interface.power_control();
+        let power_ctl = slot.sdhci_interface.power_control();
 
-            match power_ctl.voltage() {
-                SdhciOperatingVoltage::V1_8 => self.from_1_70V_to_1_95V(),
-                SdhciOperatingVoltage::V3_0 => self.V3_0(),
-                SdhciOperatingVoltage::V3_3 => self.V3_3(),
-            }
+        match power_ctl.voltage() {
+            SdhciOperatingVoltage::V1_8 => self.from_1_70_v_to_1_95_v(),
+            SdhciOperatingVoltage::V3_0 => self.v3_0(),
+            SdhciOperatingVoltage::V3_3 => self.v3_3(),
         }
     }
 }
@@ -223,16 +220,14 @@ impl Emmc {
         sdhci_slot.enable_all_interrupt_statuses();               
 
         // Enable transfer complete interrupts signal and error signals
-        unsafe {
-            let normal_interrupt_signal_enable = sdhci_slot.sdhci_interface.normal_interrupt_signal_enable()
-                .with_transfer_complete(true);
-            sdhci_slot.sdhci_interface.set_normal_interrupt_signal_enable(normal_interrupt_signal_enable);
-        }
+        let normal_interrupt_signal_enable = sdhci_slot.sdhci_interface.normal_interrupt_signal_enable()
+            .with_transfer_complete(true);
+        sdhci_slot.sdhci_interface.set_normal_interrupt_signal_enable(normal_interrupt_signal_enable);
         sdhci_slot.enable_all_error_signals();
 
         // Set 400KHz as default frequency
         // TODO: Check for errors
-        sdhci_slot.set_sdclock_frequency(400);
+        sdhci_slot.set_sdclock_frequency(400)?;
 
         let command = SdhciCommand {
             command_desc: NO_RESPONSE_PRESET
@@ -342,7 +337,7 @@ impl Emmc {
 
     fn serve_op(&mut self, op: EmmcOp) -> Result<(), EmmcError> {
         match op {
-            EmmcOp::Read {block_index: block_index, address: address } => {
+            EmmcOp::Read { block_index,  address: _ } => {
                 let data_transfer_kind = SdhciDataTransferKind::DmaTransfer(SdhciDmaTransfer {
                     sdma_address: TryInto::<usize>::try_into(self.bounce_buffer.addr()).unwrap() as u32,
                 });
@@ -376,7 +371,7 @@ impl Emmc {
 
                 Ok(res?)
             },
-            EmmcOp::Write {block_index: block_index, address: address } => {
+            EmmcOp::Write { block_index, address } => {
                 unsafe {
                     let bounce_buffer = core::slice::from_raw_parts_mut(TryInto::<usize>::try_into(self.bounce_buffer.addr()).unwrap() as *mut u8, self.block_size as usize);
                     let data_buffer = core::slice::from_raw_parts(address as *const u8, self.block_size as usize);
@@ -423,29 +418,27 @@ impl Emmc {
 
 // Build desired Operation Conditions from slot capabilities
 fn slot_capabilities_to_ocr(slot: &SdhciSlot) -> Ocr {
-    unsafe {
-        let slot_cap = slot.sdhci_interface.capabilities();
-        Ocr::new()
-            .with_from_1_70V_to_1_95V(slot_cap.voltage_1_8_support())
-            .with_V2_0(false)
-            .with_V2_1(false)
-            .with_V2_2(false)
-            .with_V2_3(false)
-            .with_V2_4(false)
-            .with_V2_5(false)
-            .with_V2_6(false)
-            .with_V2_7(false)
-            .with_V2_8(false)
-            .with_V2_9(false)
-            .with_V3_0(slot_cap.voltage_3_0_support())
-            .with_V3_1(false)
-            .with_V3_2(false)
-            .with_V3_3(slot_cap.voltage_3_3_support())
-            .with_V3_4(false)
-            .with_V3_5(false)
-            .with_access_mode(AccessMode::Sector) // NOTE: Slot is always capable of sector access
-            .with_powered_up(false)
-    }
+    let slot_cap = slot.sdhci_interface.capabilities();
+    Ocr::new()
+        .with_from_1_70_v_to_1_95_v(slot_cap.voltage_1_8_support())
+        .with_v2_0(false)
+        .with_v2_1(false)
+        .with_v2_2(false)
+        .with_v2_3(false)
+        .with_v2_4(false)
+        .with_v2_5(false)
+        .with_v2_6(false)
+        .with_v2_7(false)
+        .with_v2_8(false)
+        .with_v2_9(false)
+        .with_v3_0(slot_cap.voltage_3_0_support())
+        .with_v3_1(false)
+        .with_v3_2(false)
+        .with_v3_3(slot_cap.voltage_3_3_support())
+        .with_v3_4(false)
+        .with_v3_5(false)
+        .with_access_mode(AccessMode::Sector) // NOTE: Slot is always capable of sector access
+        .with_powered_up(false)
 }
 
 fn main_routine(mut slot: SdhciSlot) -> Result<(), EmmcError> {
@@ -475,12 +468,12 @@ fn main_routine(mut slot: SdhciSlot) -> Result<(), EmmcError> {
 
     loop {
         unsafe {
-            if interupt_received {
+            if INTERRUPT_RECEIVED {
                 match slot.wait_for_transfer_complete() {
                     Ok(_) => { 
                         info!("DMA completed");
                         match current {
-                            Some(EmmcOp::Read { block_index: _, address: address} ) => {
+                            Some(EmmcOp::Read { block_index: _, address} ) => {
                                 let bounce_buffer = core::slice::from_raw_parts(TryInto::<usize>::try_into(emmc.bounce_buffer.addr()).unwrap() as *const u8, emmc.block_size as usize);
                                 let data_buffer = core::slice::from_raw_parts_mut(address as *mut u8, emmc.block_size as usize);
                                 data_buffer.copy_from_slice(bounce_buffer);
@@ -497,7 +490,7 @@ fn main_routine(mut slot: SdhciSlot) -> Result<(), EmmcError> {
                 }
 
                 current = None;
-                interupt_received = false;
+                INTERRUPT_RECEIVED = false;
             }
         }
 
@@ -533,32 +526,28 @@ fn main_routine(mut slot: SdhciSlot) -> Result<(), EmmcError> {
             info!("Driver back to work");
         }
     }
-
-    Ok(())
 }
 
 fn try_recover(mut slot: SdhciSlot, err: EmmcRecoverableError) -> Result<(), EmmcUnrecoverableError> {
     match err {
         EmmcRecoverableError::InvalidConditions(emmc_ocr) => {
-            unsafe {
-                let slot_cap = slot.sdhci_interface.capabilities();
+            let slot_cap = slot.sdhci_interface.capabilities();
 
-                // TODO: Check for errors
-                if slot_cap.voltage_3_3_support() && emmc_ocr.V3_3() {
-                    slot.power_up(SdhciOperatingVoltage::V3_3);
-                    Ok(())
-                }
-                else if slot_cap.voltage_3_0_support() && emmc_ocr.V3_0() {
-                    slot.power_up(SdhciOperatingVoltage::V3_0);
-                    Ok(())
-                }
-                else if slot_cap.voltage_1_8_support() && emmc_ocr.from_1_70V_to_1_95V() {
-                    slot.power_up(SdhciOperatingVoltage::V1_8);
-                    Ok(())
-                }
-                else {
-                    Err(EmmcUnrecoverableError::Incompatible)
-                }
+            // TODO: Check for errors
+            if slot_cap.voltage_3_3_support() && emmc_ocr.v3_3() {
+                slot.power_up(SdhciOperatingVoltage::V3_3)?;
+                Ok(())
+            }
+            else if slot_cap.voltage_3_0_support() && emmc_ocr.v3_0() {
+                slot.power_up(SdhciOperatingVoltage::V3_0)?;
+                Ok(())
+            }
+            else if slot_cap.voltage_1_8_support() && emmc_ocr.from_1_70_v_to_1_95_v() {
+                slot.power_up(SdhciOperatingVoltage::V1_8)?;
+                Ok(())
+            }
+            else {
+                Err(EmmcUnrecoverableError::Incompatible)
             }
         }
     }
@@ -568,7 +557,7 @@ pub extern "C" fn driver_task() -> ! {
     unsafe {
         // TODO: Get this structure from bus-driver using some id of device, to which driver is attached
         // If there is no sdhci host or no 0th slot - panic
-        let slot = crate::sdhci::host.as_mut().unwrap().slots[0].unwrap();
+        let slot = crate::sdhci::HOST.as_mut().unwrap().slots[0].unwrap();
 
         loop {
             let res = main_routine(slot);
