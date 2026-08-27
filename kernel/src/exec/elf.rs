@@ -18,7 +18,10 @@ use object::read::elf::{FileHeader, ProgramHeader};
 use object::{elf, LittleEndian};
 
 use crate::arch::traits::{TargetAddressSpace, TargetPhysicalAllocation, TargetPhysicalAllocator};
-use crate::arch::{AddressSpace, KERNEL_LAYOUT, PhysicalAddress, PhysicalAllocator, VirtualAddress};
+use crate::arch::{
+    kernel_sections, AddressSpace, KERNEL_LAYOUT, PhysicalAddress, PhysicalAllocator,
+    VirtualAddress,
+};
 use crate::exec::image::Image;
 use crate::exec::{align_down, align_up, ExecError, USER_STACK_SIZE, USER_STACK_TOP};
 use crate::threading::init::{spawn_user_program, UserProgram};
@@ -206,19 +209,6 @@ fn map_segment(
     Ok(())
 }
 
-// Temporary MMU tables and per-thread kernel stacks live in `.page_table_pool`
-// after `__epage_table_pool`; `KERNEL_LAYOUT` does not know them.
-unsafe extern "C" {
-    #[link_name = "__s_temp_mmu_table"]
-    static S_TEMP_MMU_TABLE: u8;
-    #[link_name = "__e_temp_mmu_table"]
-    static E_TEMP_MMU_TABLE: u8;
-    #[link_name = "__s_temp_kernel_stacks"]
-    static S_TEMP_KERNEL_STACKS: u8;
-    #[link_name = "__e_temp_kernel_stacks"]
-    static E_TEMP_KERNEL_STACKS: u8;
-}
-
 /// Map the kernel half into a fresh process address space, sharing the
 /// physical pages that `map_kernel_sections` already reserved for the boot AS.
 ///
@@ -227,58 +217,22 @@ unsafe extern "C" {
 /// switch. The mappings are owned by `address_space` itself and are torn down
 /// when the address space dies.
 pub fn map_kernel_shared(address_space: &mut AddressSpace) -> Result<(), ExecError> {
-    let layout = &KERNEL_LAYOUT;
-    let va_offset = layout.kernel_va_offset;
-
-    let sections: [(&str, usize, usize, MappingPermissions); 9] = [
-        ("text", layout.stext, layout.etext, MappingPermissions::rx()),
-        ("rodata", layout.srodata, layout.erodata, MappingPermissions::ro()),
-        ("data", layout.sdata, layout.edata, MappingPermissions::rw()),
-        ("bss", layout.sbss, layout.ebss, MappingPermissions::rw()),
-        ("heap", layout.sheap, layout.eheap, MappingPermissions::rw()),
-        (
-            "page_table_pool",
-            layout.spage_table_pool,
-            layout.epage_table_pool,
-            MappingPermissions::rw(),
-        ),
-        (
-            "temp_mmu_table",
-            unsafe { &S_TEMP_MMU_TABLE as *const u8 as usize },
-            unsafe { &E_TEMP_MMU_TABLE as *const u8 as usize },
-            MappingPermissions::rw(),
-        ),
-        (
-            "kernel_stacks",
-            unsafe { &S_TEMP_KERNEL_STACKS as *const u8 as usize },
-            unsafe { &E_TEMP_KERNEL_STACKS as *const u8 as usize },
-            MappingPermissions::rw(),
-        ),
-        ("stack", layout.estack, layout.sstack, MappingPermissions::rw()),
-    ];
-
-    for (name, start, end, perms) in sections {
+    for (name, start, end, perms) in kernel_sections() {
         if end <= start {
             continue;
         }
-        let phys = PhysicalAddress::try_from(start - va_offset)
+        let phys = PhysicalAddress::try_from(start - KERNEL_LAYOUT.kernel_va_offset)
             .map_err(|_| ExecError::ImageFault)?;
-        // Pages already reserved by boot (kernel sections) get one more
-        // reference; pages the kernel occupies but never marked (temporary
-        // MMU tables, per-thread stacks) get reserved on the spot.
-        let alloc = match PhysicalAllocator::retain(phys, end - start) {
-            Ok(a) => a,
-            Err(_) => PhysicalAllocator::alloc_contiguous_at(phys, end - start)?,
-        };
+        // Boot (map_kernel_sections) already reserved every kernel page, so
+        // we only take one more reference to share them with this process.
+        let alloc = PhysicalAllocator::retain(phys, end - start)?;
         address_space.map(
             VirtualAddress::try_from(start).unwrap(),
             alloc,
             perms,
             MappingFlags::new(),
         );
-        info!(
-            "exec: shared kernel {name} {start:#018x}..{end:#018x}",
-        );
+        info!("exec: shared kernel {name} {start:#018x}..{end:#018x}");
     }
 
     Ok(())

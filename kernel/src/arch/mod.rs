@@ -32,6 +32,7 @@ cfg_select! {
 
         pub use riscv::mmu::set_satp;
         pub use riscv::memory::layout::KERNEL_LAYOUT;
+        pub use riscv::mapping::kernel_sections;
     }
     _ => {
         compile_error!("Unsupported platform");
