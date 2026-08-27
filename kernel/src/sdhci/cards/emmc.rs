@@ -2,9 +2,10 @@ use crate::allocator::AllocatorError;
 use crate::arch::{ PhysicalAllocation, PhysicalAllocator };
 use crate::arch::traits::{ TargetPhysicalAllocation, TargetPhysicalAllocator };
 use crate::threading::scheduler::reschedule;
-use heapless::mpmc;
+use heapless::{ mpmc, Vec };
 use riscv::_export::critical_section;
 use bitfield_struct::{ bitfield, bitenum };
+use core::ptr::{ read_volatile, write_volatile };
 use crate::sdhci::sdhci_command::*;
 use crate::sdhci::{ SdhciCommandDesc, SdhciCommandType, SdhciResponseType, SdhciError, SdhciSlot, SdhciTransferMode, SdhciTransferingDirection, SdhciBlockSize, SdhciOperatingVoltage };
 
@@ -28,16 +29,202 @@ const NO_RESPONSE_PRESET: SdhciCommandDesc = SdhciCommandDesc::new()
     .with_crc_enable(false)
     .with_index_check_enable(false);
 
+const ADMA2_VALID: u16 = 1 << 0;
+const ADMA2_END: u16 = 1 << 1;
+const ADMA2_TRANSFER: u16 = 0b10 << 4;
+const ADMA2_DESCRIPTOR_CAPACITY: usize = 16;
+const MAX_BLOCKS_PER_TRANSFER: u16 = ADMA2_DESCRIPTOR_CAPACITY as u16;
+
+#[repr(C, align(4))]
+#[derive(Copy, Clone)]
+struct Adma2Descriptor {
+    attributes: u16,
+    length: u16,
+    address: u32,
+}
+
+struct Adma2DescriptorTable {
+    allocation: PhysicalAllocation,
+    len: usize,
+    capacity: usize,
+}
+
+impl Adma2DescriptorTable {
+    fn new(capacity: usize) -> Result<Self, AllocatorError> {
+        let size = core::mem::size_of::<Adma2Descriptor>()
+            .checked_mul(capacity)
+            .ok_or(AllocatorError::NotEnoughMemory)?;
+
+        let allocation = PhysicalAllocator::alloc_contiguous_aligned(
+            size,
+            core::mem::align_of::<Adma2Descriptor>(),
+        )?;
+        let address: usize = allocation.addr().try_into().unwrap();
+
+        debug!(
+            "Allocated ADMA2 descriptor table: address=0x{address:X}, capacity={capacity}, requested_size={size}, allocated_size={}",
+            allocation.size(),
+        );
+        assert!(address < (1 << 32));
+
+        Ok(Self {
+            allocation,
+            len: 0,
+            capacity,
+        })
+    }
+
+    fn clear(&mut self) {
+        self.len = 0;
+    }
+
+    fn push_transfer(&mut self, buffer_address: u32, length: u16) -> bool {
+        if self.len == self.capacity {
+            return false;
+        }
+
+        let descriptor_index = self.len;
+
+        unsafe {
+            let descriptor = (self.physical_address() as *mut Adma2Descriptor)
+                .add(descriptor_index);
+
+            write_volatile(
+                descriptor,
+                Adma2Descriptor {
+                    attributes: ADMA2_VALID | ADMA2_TRANSFER,
+                    length,
+                    address: buffer_address,
+                },
+            );
+        }
+
+        self.len += 1;
+
+        debug!(
+            "ADMA2 descriptor[{descriptor_index}]: buffer=0x{buffer_address:08X}, length={length}",
+        );
+
+        true
+    }
+
+    fn finish(&mut self) -> bool {
+        if self.len == 0 {
+            return false;
+        }
+
+        unsafe {
+            let descriptor = (self.physical_address() as *mut Adma2Descriptor)
+                .add(self.len - 1);
+            let descriptor_value = read_volatile(descriptor);
+
+            write_volatile(
+                descriptor,
+                Adma2Descriptor {
+                    attributes: descriptor_value.attributes | ADMA2_END,
+                    length: descriptor_value.length,
+                    address: descriptor_value.address,
+                },
+            );
+        }
+
+        true
+    }
+
+    fn physical_address(&self) -> usize {
+        self.allocation.addr().try_into().unwrap()
+    }
+}
+
 #[derive(Copy, Clone)]
 pub enum EmmcOp {
     Read {
         block_index: u32,
+        block_count: u16,
         address: usize,
     },
     Write {
         block_index: u32,
+        block_count: u16,
         address: usize,
     },
+}
+
+#[derive(Copy, Clone, PartialEq)]
+enum EmmcDirection {
+    Read,
+    Write,
+}
+
+impl EmmcOp {
+    fn direction(&self) -> EmmcDirection {
+        match self {
+            EmmcOp::Read { .. } => EmmcDirection::Read,
+            EmmcOp::Write { .. } => EmmcDirection::Write,
+        }
+    }
+
+    fn block_index(&self) -> u32 {
+        match self {
+            EmmcOp::Read { block_index, .. }
+            | EmmcOp::Write { block_index, .. } => *block_index,
+        }
+    }
+
+    fn block_count(&self) -> u16 {
+        match self {
+            EmmcOp::Read { block_count, .. }
+            | EmmcOp::Write { block_count, .. } => *block_count,
+        }
+    }
+}
+
+struct EmmcBatch {
+    direction: EmmcDirection,
+    first_block: u32,
+    block_count: u16,
+    operations: Vec<EmmcOp, ADMA2_DESCRIPTOR_CAPACITY>,
+}
+
+impl EmmcBatch {
+    fn new(first: EmmcOp) -> Self {
+        let mut operations = Vec::new();
+        assert!(operations.push(first).is_ok());
+
+        EmmcBatch {
+            direction: first.direction(),
+            first_block: first.block_index(),
+            block_count: first.block_count(),
+            operations,
+        }
+    }
+
+    fn can_append(&self, operation: &EmmcOp) -> bool {
+        let Some(next_block) = self.first_block.checked_add(self.block_count as u32) else {
+            return false;
+        };
+        let Some(block_count) = self.block_count.checked_add(operation.block_count()) else {
+            return false;
+        };
+
+        self.direction == operation.direction()
+            && next_block == operation.block_index()
+            && block_count <= MAX_BLOCKS_PER_TRANSFER
+    }
+
+    fn push(&mut self, operation: EmmcOp) -> bool {
+        if !self.can_append(&operation) {
+            return false;
+        }
+
+        let operation_block_count = operation.block_count();
+        if self.operations.push(operation).is_err() {
+            return false;
+        }
+
+        self.block_count += operation_block_count;
+        true
+    }
 }
 
 pub enum EmmcDriverMessage {
@@ -56,6 +243,7 @@ pub fn put_into_queue(message: EmmcDriverMessage, queue: &mpmc::QueueView<EmmcOp
         EmmcDriverMessage::Interrupt => {
             unsafe {
                 INTERRUPT_RECEIVED = true;
+                EMMC_DRIVER_ANY = true;
             }
         },
         // In-band message
@@ -80,6 +268,29 @@ pub fn put_into_queue(message: EmmcDriverMessage, queue: &mpmc::QueueView<EmmcOp
             unsafe { EMMC_DRIVER_ANY = true };
         },
     }
+}
+
+fn take_next_operation(lookahead: &mut Option<EmmcOp>) -> Option<EmmcOp> {
+    lookahead
+        .take()
+        .or_else(|| critical_section::with(|_| EMMC_DRIVER_QUEUE.dequeue()))
+}
+
+fn build_batch(first: EmmcOp, lookahead: &mut Option<EmmcOp>) -> EmmcBatch {
+    let mut batch = EmmcBatch::new(first);
+
+    while batch.block_count < MAX_BLOCKS_PER_TRANSFER {
+        let Some(operation) = take_next_operation(lookahead) else {
+            break;
+        };
+
+        if !batch.push(operation) {
+            *lookahead = Some(operation);
+            break;
+        }
+    }
+
+    batch
 }
 
 #[derive(Debug)]
@@ -208,6 +419,7 @@ struct Emmc {
     sdhci_slot: SdhciSlot,
     block_size: u16,                    // in bytes
     bounce_buffer: PhysicalAllocation,  // buffer in first 4GB of phys memory
+    adma_descriptor_table: Adma2DescriptorTable,
     access_mode: AccessMode,
     rca: u16,
 }
@@ -324,95 +536,183 @@ impl Emmc {
         info!("Slot {} state {}", sdhci_slot.slot_num, (status >> 8) & 0b1111);
 
         // Allocate bounce buffer
-        let buff = PhysicalAllocator::alloc_contiguous_aligned(512, 512)?;
+        let buff = PhysicalAllocator::alloc_contiguous_aligned(
+            512 * MAX_BLOCKS_PER_TRANSFER as usize,
+            512,
+        )?;
         let buff_addr: usize = buff.addr().try_into().unwrap();
 
         // NOTE: Bounce buffer must be in upper 4GB of memory
         debug!("Allocated buffer for DMA: 0x{buff_addr:X}");
         assert!(buff_addr < (1 << 32));
 
+        let adma_descriptor_table =
+            Adma2DescriptorTable::new(ADMA2_DESCRIPTOR_CAPACITY)?;
+
         // TODO: Get block size as minimum between slot and eMMC capabilities
-        Ok(Emmc { sdhci_slot, block_size: 512, bounce_buffer: buff, access_mode, rca })
+        Ok(Emmc { sdhci_slot, block_size: 512, bounce_buffer: buff, adma_descriptor_table, access_mode, rca })
     }
 
-    fn serve_op(&mut self, op: EmmcOp) -> Result<(), EmmcError> {
-        match op {
-            EmmcOp::Read { block_index,  address: _ } => {
-                let data_transfer_kind = SdhciDataTransferKind::DmaTransfer(SdhciDmaTransfer {
-                    sdma_address: TryInto::<usize>::try_into(self.bounce_buffer.addr()).unwrap() as u32,
-                });
-                let kind = SdhciCommandKind::DataTransfer(SdhciDataTransfer {
-                    block_size: SdhciBlockSize::new()
-                        .with_transfer_block_size(self.block_size)
-                        .with_host_sdma_buffer_boundary(0),
-                    block_count: 1,
-                    transfer_mode: SdhciTransferMode::new()
-                        .with_dma_enable(true)
-                        .with_block_count_enable(false)
-                        .with_auto_cmd12_enable(false)
-                        .with_data_transfer_direction_select(SdhciTransferingDirection::Read)
-                        .with_multi_block_select(false),
-                    data_transfer_kind,
-                });
-                let command = SdhciCommand {
-                    argument: block_index,
-                    command_desc: R1_COMMAND_PRESET
-                        .with_data_present(true)
-                        .with_command_type(SdhciCommandType::Normal)
-                        .with_index(17),
-                    kind,
-                };
-                self.sdhci_slot.send_command(&command)?;
-                let res = self.sdhci_slot.wait_for_command_complete();
-                
-                if res.is_ok() {
-                    info!("Reading from slot {}", self.sdhci_slot.slot_num);
-                }
+    fn prepare_adma2_descriptors(&mut self, block_count: u16) -> u64 {
+        let buffer_address: usize = self.bounce_buffer.addr().try_into().unwrap();
+        let descriptor_table_address = self.adma_descriptor_table.physical_address();
 
-                Ok(res?)
-            },
-            EmmcOp::Write { block_index, address } => {
-                unsafe {
-                    let bounce_buffer = core::slice::from_raw_parts_mut(TryInto::<usize>::try_into(self.bounce_buffer.addr()).unwrap() as *mut u8, self.block_size as usize);
-                    let data_buffer = core::slice::from_raw_parts(address as *const u8, self.block_size as usize);
+        assert!(block_count > 0);
+        assert!(block_count <= MAX_BLOCKS_PER_TRANSFER);
 
-                    bounce_buffer.copy_from_slice(data_buffer);
-                }
+        self.adma_descriptor_table.clear();
 
-                let data_transfer_kind = SdhciDataTransferKind::DmaTransfer(SdhciDmaTransfer {
-                    sdma_address: TryInto::<usize>::try_into(self.bounce_buffer.addr()).unwrap() as u32,
-                });
-                let kind = SdhciCommandKind::DataTransfer(SdhciDataTransfer {
-                    block_size: SdhciBlockSize::new()
-                        .with_transfer_block_size(self.block_size)
-                        .with_host_sdma_buffer_boundary(0),
-                    block_count: 1,
-                    transfer_mode: SdhciTransferMode::new()
-                        .with_dma_enable(true)
-                        .with_block_count_enable(false)
-                        .with_auto_cmd12_enable(false)
-                        .with_data_transfer_direction_select(SdhciTransferingDirection::Write)
-                        .with_multi_block_select(false),
-                    data_transfer_kind,
-                });
-                let command = SdhciCommand {
-                    command_desc: R1_COMMAND_PRESET
-                        .with_data_present(true)
-                        .with_command_type(SdhciCommandType::Normal)
-                        .with_index(24),
-                    argument: block_index,
-                    kind,
-                };
-                self.sdhci_slot.send_command(&command)?;
-                let res = self.sdhci_slot.wait_for_command_complete();
+        for index in 0..block_count as usize {
+            let descriptor_buffer_address =
+                buffer_address + index * self.block_size as usize;
 
-                if res.is_ok() {
-                    info!("Writing to slot {}", self.sdhci_slot.slot_num);
-                }
-
-                Ok(res?)
-            },
+            assert!(descriptor_buffer_address < (1 << 32));
+            assert!(self.adma_descriptor_table.push_transfer(
+                descriptor_buffer_address as u32,
+                self.block_size,
+            ));
         }
+
+        assert!(self.adma_descriptor_table.finish());
+
+        debug!(
+            "ADMA2 table ready: address=0x{descriptor_table_address:X}, descriptors={}, total_length={}",
+            self.adma_descriptor_table.len,
+            self.block_size as usize * block_count as usize,
+        );
+
+        descriptor_table_address as u64
+    }
+
+    fn set_block_count(&mut self, block_count: u16) -> Result<(), EmmcError> {
+        let command = SdhciCommand {
+            command_desc: R1_COMMAND_PRESET
+                .with_data_present(false)
+                .with_command_type(SdhciCommandType::Normal)
+                .with_index(23),
+            argument: block_count as u32,
+            kind: SdhciCommandKind::NonDatCommand,
+        };
+
+        self.sdhci_slot.send_command(&command)?;
+        self.sdhci_slot.wait_for_command_complete()?;
+
+        Ok(())
+    }
+
+    fn prepare_batch_write(&self, batch: &EmmcBatch) {
+        let bounce_buffer_address: usize = self.bounce_buffer.addr().try_into().unwrap();
+        let mut offset = 0;
+
+        for operation in batch.operations.iter() {
+            let EmmcOp::Write { block_count, address, .. } = operation else {
+                unreachable!();
+            };
+            let transfer_size = self.block_size as usize * *block_count as usize;
+
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    *address as *const u8,
+                    (bounce_buffer_address + offset) as *mut u8,
+                    transfer_size,
+                );
+            }
+
+            offset += transfer_size;
+        }
+    }
+
+    fn complete_batch_read(&self, batch: &EmmcBatch) {
+        let bounce_buffer_address: usize = self.bounce_buffer.addr().try_into().unwrap();
+        let mut offset = 0;
+
+        for operation in batch.operations.iter() {
+            let EmmcOp::Read { block_count, address, .. } = operation else {
+                unreachable!();
+            };
+            let transfer_size = self.block_size as usize * *block_count as usize;
+
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    (bounce_buffer_address + offset) as *const u8,
+                    *address as *mut u8,
+                    transfer_size,
+                );
+            }
+
+            offset += transfer_size;
+        }
+    }
+
+    fn serve_batch(&mut self, batch: &EmmcBatch) -> Result<(), EmmcError> {
+        assert!(batch.block_count > 0);
+        assert!(batch.block_count <= MAX_BLOCKS_PER_TRANSFER);
+
+        let multi_block = batch.block_count > 1;
+
+        if multi_block {
+            self.set_block_count(batch.block_count)?;
+        }
+
+        let transfer_direction = match batch.direction {
+            EmmcDirection::Read => SdhciTransferingDirection::Read,
+            EmmcDirection::Write => {
+                self.prepare_batch_write(batch);
+                SdhciTransferingDirection::Write
+            },
+        };
+
+        let command_index = match (batch.direction, multi_block) {
+            (EmmcDirection::Read, false) => 17,
+            (EmmcDirection::Read, true) => 18,
+            (EmmcDirection::Write, false) => 24,
+            (EmmcDirection::Write, true) => 25,
+        };
+
+        let descriptor_table_address =
+            self.prepare_adma2_descriptors(batch.block_count);
+        let data_transfer_kind = SdhciDataTransferKind::DmaTransfer(
+            SdhciDmaTransfer::Adma2 {
+                descriptor_table_address,
+            },
+        );
+        let kind = SdhciCommandKind::DataTransfer(SdhciDataTransfer {
+            block_size: SdhciBlockSize::new()
+                .with_transfer_block_size(self.block_size)
+                .with_host_sdma_buffer_boundary(0),
+            block_count: batch.block_count,
+            transfer_mode: SdhciTransferMode::new()
+                .with_dma_enable(true)
+                .with_block_count_enable(multi_block)
+                .with_auto_cmd12_enable(false)
+                .with_data_transfer_direction_select(transfer_direction)
+                .with_multi_block_select(multi_block),
+            data_transfer_kind,
+        });
+        let command = SdhciCommand {
+            argument: batch.first_block,
+            command_desc: R1_COMMAND_PRESET
+                .with_data_present(true)
+                .with_command_type(SdhciCommandType::Normal)
+                .with_index(command_index),
+            kind,
+        };
+
+        self.sdhci_slot.send_command(&command)?;
+        self.sdhci_slot.wait_for_command_complete()?;
+
+        info!(
+            "Started ADMA2 {}: first_block={}, blocks={}, requests={}",
+            match batch.direction {
+                EmmcDirection::Read => "read",
+                EmmcDirection::Write => "write",
+            },
+            batch.first_block,
+            batch.block_count,
+            batch.operations.len(),
+        );
+
+        Ok(())
     }
 }
 
@@ -444,7 +744,8 @@ fn slot_capabilities_to_ocr(slot: &SdhciSlot) -> Ocr {
 fn main_routine(mut slot: SdhciSlot) -> Result<(), EmmcError> {
     let mut emmc = Emmc::new(slot)?;
 
-    let mut current: Option<EmmcOp> = None;
+    let mut current: Option<EmmcBatch> = None;
+    let mut lookahead: Option<EmmcOp> = None;
 
     // TODO: Check CSD:
     // enable high speed and widest bus possible
@@ -460,7 +761,7 @@ fn main_routine(mut slot: SdhciSlot) -> Result<(), EmmcError> {
 
         #[cfg(feature = "emmc-read-test")]
         {
-            put_into_queue(EmmcDriverMessage::Op(EmmcOp::Read {block_index: 0, address: buff_addr }), EMMC_DRIVER_QUEUE.as_view());
+            put_into_queue(EmmcDriverMessage::Op(EmmcOp::Read { block_index: 0, block_count: 1, address: buff_addr }), EMMC_DRIVER_QUEUE.as_view());
         }
         #[cfg(feature = "emmc-write-test")]
         {
@@ -468,8 +769,8 @@ fn main_routine(mut slot: SdhciSlot) -> Result<(), EmmcError> {
             for byte in buff.iter_mut() {
                 *byte = 128;
             }
-            put_into_queue(EmmcDriverMessage::Op(EmmcOp::Write { block_index: 0, address: buff_addr }), EMMC_DRIVER_QUEUE.as_view());
-            put_into_queue(EmmcDriverMessage::Op(EmmcOp::Read {block_index: 0, address: buff_addr }), EMMC_DRIVER_QUEUE.as_view());
+            put_into_queue(EmmcDriverMessage::Op(EmmcOp::Write { block_index: 0, block_count: 1, address: buff_addr }), EMMC_DRIVER_QUEUE.as_view());
+            put_into_queue(EmmcDriverMessage::Op(EmmcOp::Read { block_index: 0, block_count: 1, address: buff_addr }), EMMC_DRIVER_QUEUE.as_view());
         }
         #[cfg(feature = "emmc-mass-write-test")]
         {
@@ -478,7 +779,7 @@ fn main_routine(mut slot: SdhciSlot) -> Result<(), EmmcError> {
                 *byte = 128;
             }
             for i in 0..32 {
-                put_into_queue(EmmcDriverMessage::Op(EmmcOp::Write { block_index: i, address: buff_addr }), EMMC_DRIVER_QUEUE.as_view());
+                put_into_queue(EmmcDriverMessage::Op(EmmcOp::Write { block_index: i, block_count: 1, address: buff_addr }), EMMC_DRIVER_QUEUE.as_view());
             }
         }
     }
@@ -488,19 +789,18 @@ fn main_routine(mut slot: SdhciSlot) -> Result<(), EmmcError> {
             if INTERRUPT_RECEIVED {
                 match slot.wait_for_transfer_complete() {
                     Ok(_) => { 
-                        info!("DMA completed");
-                        match current {
-                            Some(EmmcOp::Read { block_index: _, address} ) => {
-                                let bounce_buffer = core::slice::from_raw_parts(TryInto::<usize>::try_into(emmc.bounce_buffer.addr()).unwrap() as *const u8, emmc.block_size as usize);
-                                let data_buffer = core::slice::from_raw_parts_mut(address as *mut u8, emmc.block_size as usize);
-                                data_buffer.copy_from_slice(bounce_buffer);
+                        if let Some(batch) = current.as_ref() {
+                            match batch.direction {
+                                EmmcDirection::Read => emmc.complete_batch_read(batch),
+                                EmmcDirection::Write => {},
+                            }
 
-                                info!("READ: {:x?}", data_buffer);
-                            },
-                            Some(EmmcOp::Write { block_index: _, address: _}) => {
-                                info!("Written data");
-                            },
-                            None => {},
+                            info!(
+                                "ADMA2 transfer completed: first_block={}, blocks={}, requests={}",
+                                batch.first_block,
+                                batch.block_count,
+                                batch.operations.len(),
+                            );
                         }
                     },
                     Err(err) => error!("DMA error: {:?}", err),
@@ -512,7 +812,7 @@ fn main_routine(mut slot: SdhciSlot) -> Result<(), EmmcError> {
         }
 
         if current.is_none() {
-            let op = critical_section::with(|_| EMMC_DRIVER_QUEUE.dequeue());
+            let op = take_next_operation(&mut lookahead);
             match op {
                 None => {
                     info!("Driver task yields");
@@ -523,12 +823,11 @@ fn main_routine(mut slot: SdhciSlot) -> Result<(), EmmcError> {
                     info!("Driver back to work");
                 },
                 Some(op) => {
-                    current = Some(op);
-                    match emmc.serve_op(op) {
-                        Ok(_) => {},
+                    let batch = build_batch(op, &mut lookahead);
+                    match emmc.serve_batch(&batch) {
+                        Ok(_) => current = Some(batch),
                         Err(err) => {
                             error!("Slot {} error: {:?}", slot.slot_num, err);
-                            current = None;
                         },
                     }
                 },
