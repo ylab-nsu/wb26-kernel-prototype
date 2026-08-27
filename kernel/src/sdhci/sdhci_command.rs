@@ -23,7 +23,11 @@ pub enum SdhciDataTransferKind {
     DmaTransfer(SdhciDmaTransfer),
 }
 
-pub struct SdhciDmaTransfer {
-    pub sdma_address: u32,
+pub enum SdhciDmaTransfer {
+    Sdma {
+        address: u32,
+    },
+    Adma2 {
+        descriptor_table_address: u64,
+    },
 }
-
