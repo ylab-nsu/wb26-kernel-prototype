@@ -243,7 +243,7 @@ fn init_stack(address_space: &mut AddressSpace) {
         .expect("alloc stack");
 
     address_space.map(
-        VirtualAddress::try_from(USER_STACK_TOP as usize).unwrap(),
+        VirtualAddress::try_from((USER_STACK_TOP - USER_STACK_SIZE) as usize).unwrap(),
         stack_alloc,
         MappingPermissions::rw(),
         MappingFlags::new().with_user(true),

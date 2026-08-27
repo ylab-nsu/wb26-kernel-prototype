@@ -117,6 +117,13 @@ pub fn spawn_user(f: extern "C" fn() -> !, user_sp: usize) -> usize {
     }
 }
 
+/// `_initial_return_trap` re-adds the trap-frame size (FRAME_SIZE*REG_SIZE =
+/// 32*8 = 256) to the restored user `sp` on every return, undoing the trap-entry
+/// `addi sp, sp, -FRAME_SIZE*REG_SIZE`. A fresh thread never entered the trap,
+/// so its frame `sp` must be pre-compensated by that amount to land exactly on
+/// `USER_STACK_TOP` after the return sequence.
+const INITIAL_SP_FRAME_OFFSET: usize = 32 * 8;
+
 /// Spawn a user thread that runs in its own `AddressSpace`, entered directly
 /// at `entry` (no crt0 trampoline). Ownership of the address space moves into
 /// the thread.
@@ -124,7 +131,9 @@ pub fn spawn_user_in(entry: usize, user_sp: usize, address_space: AddressSpace) 
     unsafe {
         let id = THREADS.len();
         let thread = Thread::new(id, address_space);
-        *thread.user_frame = TrapFrame::default().with_pc(entry).with_sp(user_sp);
+        *thread.user_frame = TrapFrame::default()
+            .with_pc(entry)
+            .with_sp(user_sp - INITIAL_SP_FRAME_OFFSET);
         *thread.context = Context::default()
             .with_ra(_initial_return_trap as *const () as usize)
             .with_sp((thread.user_frame as *mut TrapFrame) as usize);
