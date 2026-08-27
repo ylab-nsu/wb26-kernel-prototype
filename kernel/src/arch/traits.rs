@@ -1,3 +1,5 @@
+use alloc::sync::Arc;
+
 use crate::{
     allocator::AllocatorError,
     arch::{Mapping, PhysicalAddress, PhysicalAllocation, PlatformDuration, VirtualAddress},
@@ -27,10 +29,16 @@ pub trait TargetAddressSpace {
     fn map(
         &mut self,
         virt_addr: VirtualAddress,
-        phys_alloc: PhysicalAllocation,
+        phys_alloc: Arc<PhysicalAllocation>,
         permissions: MappingPermissions,
         flags: MappingFlags,
     ) -> Mapping;
+
+    unsafe fn unmap(&mut self, mapping: &Mapping);
+
+    /// Copy an existing mapping to a different virtual address, sharing its
+    /// physical pages (`Arc::clone` on the held allocation).
+    fn map_shared(&mut self, src: &Mapping, dest_vaddr: VirtualAddress) -> Mapping;
 
     unsafe fn switch(&self);
 }

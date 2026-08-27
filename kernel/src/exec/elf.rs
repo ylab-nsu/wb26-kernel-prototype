@@ -14,14 +14,16 @@
 //! `write_user`). Non-`PT_LOAD` program headers (`PHDR`, `GNU_STACK`,
 //! `RISCV_ATTRIBUTES`, ...) are ignored.
 
+use alloc::sync::Arc;
+
 use object::read::elf::{FileHeader, ProgramHeader};
 use object::{elf, LittleEndian};
 
-use crate::arch::traits::{TargetAddressSpace, TargetPhysicalAllocation, TargetPhysicalAllocator};
-use crate::arch::{
-    kernel_sections, AddressSpace, KERNEL_LAYOUT, PhysicalAddress, PhysicalAllocator,
-    VirtualAddress,
+use crate::arch::traits::{
+    TargetAddress, TargetAddressSpace, TargetMapping, TargetPhysicalAllocation,
+    TargetPhysicalAllocator,
 };
+use crate::arch::{AddressSpace, KERNEL_MAPPINGS, PhysicalAllocator, VirtualAddress};
 use crate::exec::image::Image;
 use crate::exec::{align_down, align_up, ExecError, USER_STACK_SIZE, USER_STACK_TOP};
 use crate::threading::init::{spawn_user_program, UserProgram};
@@ -202,7 +204,7 @@ fn map_segment(
 
     address_space.map(
         VirtualAddress::try_from(vaddr_alloc_start as usize).unwrap(),
-        alloc,
+        Arc::new(alloc),
         perms,
         MappingFlags::new().with_user(true),
     );
@@ -212,27 +214,18 @@ fn map_segment(
 /// Map the kernel half into a fresh process address space, sharing the
 /// physical pages that `map_kernel_sections` already reserved for the boot AS.
 ///
-/// The boot-time mapping owns/reserves the kernel pages; here we only take
-/// references (refcount++) so traps/syscalls still find the kernel after a
-/// switch. The mappings are owned by `address_space` itself and are torn down
-/// when the address space dies.
+/// Each canonical kernel mapping (held in `KERNEL_MAPPINGS`) is re-mapped into
+/// this process's address space, cloning its backing allocation (`Arc::clone`)
+/// so the kernel stays visible after a satp switch. The mappings are owned by
+/// `address_space` itself and are torn down when the address space dies.
 pub fn map_kernel_shared(address_space: &mut AddressSpace) -> Result<(), ExecError> {
-    for (name, start, end, perms) in kernel_sections() {
-        if end <= start {
-            continue;
-        }
-        let phys = PhysicalAddress::try_from(start - KERNEL_LAYOUT.kernel_va_offset)
-            .map_err(|_| ExecError::ImageFault)?;
-        // Boot (map_kernel_sections) already reserved every kernel page, so
-        // we only take one more reference to share them with this process.
-        let alloc = PhysicalAllocator::retain(phys, end - start)?;
-        address_space.map(
-            VirtualAddress::try_from(start).unwrap(),
-            alloc,
-            perms,
-            MappingFlags::new(),
-        );
-        info!("exec: shared kernel {name} {start:#018x}..{end:#018x}");
+    for mapping in KERNEL_MAPPINGS
+        .get()
+        .expect("kernel mappings not initialized")
+    {
+        let vaddr: usize = mapping.virt_addr().try_into().unwrap();
+        address_space.map_shared(mapping, mapping.virt_addr());
+        info!("exec: shared kernel {vaddr:#018x} (size {:#x})", mapping.size());
     }
 
     Ok(())
@@ -244,7 +237,7 @@ fn init_stack(address_space: &mut AddressSpace) {
 
     address_space.map(
         VirtualAddress::try_from((USER_STACK_TOP - USER_STACK_SIZE) as usize).unwrap(),
-        stack_alloc,
+        Arc::new(stack_alloc),
         MappingPermissions::rw(),
         MappingFlags::new().with_user(true),
     );

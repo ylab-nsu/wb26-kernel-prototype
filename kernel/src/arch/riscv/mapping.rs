@@ -1,3 +1,4 @@
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use crate::{
@@ -6,31 +7,9 @@ use crate::{
         traits::{TargetAddressSpace, TargetPhysicalAllocator},
         AddressSpace, Mapping, PhysicalAddress, PhysicalAllocator, VirtualAddress,
     },
+    sync::Once,
     vm::{MappingFlags, MappingPermissions},
 };
-
-fn map_section(
-    name: &str,
-    virt_start: usize,
-    virt_end: usize,
-    permissions: MappingPermissions,
-    flags: MappingFlags,
-    va_offset: usize,
-    address_space: &mut AddressSpace,
-) -> Mapping {
-    let size = virt_end - virt_start;
-    let phys_addr = PhysicalAddress::try_from(virt_start - va_offset).unwrap();
-    let phys_alloc = PhysicalAllocator::alloc_contiguous_at(phys_addr, size).unwrap();
-
-    info!("Map {name} from 0x{virt_start:x} to 0x{phys_addr:x}, size: {size:x}, perms: {permissions}, flags: {flags}");
-
-    address_space.map(
-        VirtualAddress::try_from(virt_start).unwrap(),
-        phys_alloc,
-        permissions,
-        flags,
-    )
-}
 
 // Temporary MMU tables and per-thread kernel stacks live in `.page_table_pool`
 // after `__epage_table_pool`; `KERNEL_LAYOUT` does not know them.
@@ -77,21 +56,34 @@ pub fn kernel_sections() -> [(&'static str, usize, usize, MappingPermissions); 9
     ]
 }
 
-pub fn map_kernel_sections(address_space: &mut AddressSpace) -> Vec<Mapping> {
-    info!("Mapping sections into kernel address space");
+/// Canonical mappings of the kernel half, written once at boot. Process
+/// address spaces share the same backing allocations by copying these mappings
+/// (`map_shared`), so the kernel half is read-only afterwards.
+pub static KERNEL_MAPPINGS: Once<Vec<Mapping>> = Once::new();
 
-    kernel_sections()
-        .into_iter()
-        .map(|(name, start, end, perms)| {
-            map_section(
-                name,
-                start,
-                end,
-                perms,
-                MappingFlags::new(),
-                KERNEL_LAYOUT.kernel_va_offset,
-                address_space,
-            )
-        })
-        .collect()
+pub fn map_kernel_sections(address_space: &mut AddressSpace) {
+    info!("Mapping sections into kernel address space");
+    let va_offset = KERNEL_LAYOUT.kernel_va_offset;
+
+    let mut registry = Vec::new();
+    for (name, start, end, perms) in kernel_sections() {
+        let size = end - start;
+        if size == 0 {
+            continue;
+        }
+
+        let phys = PhysicalAddress::try_from(start - va_offset).unwrap();
+        let alloc = PhysicalAllocator::alloc_contiguous_at(phys, size).unwrap();
+
+        info!("Map {name} from 0x{start:x} to 0x{phys:x}, size: {size:x}, perms: {perms}");
+
+        let mapping = address_space.map(
+            VirtualAddress::try_from(start).unwrap(),
+            Arc::new(alloc),
+            perms,
+            MappingFlags::new(),
+        );
+        registry.push(mapping);
+    }
+    KERNEL_MAPPINGS.call_once(|| registry);
 }

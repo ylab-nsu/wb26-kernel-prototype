@@ -1,3 +1,4 @@
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use riscv::{asm::sfence_vma_all, register::satp};
 
@@ -26,39 +27,31 @@ pub fn init_page_table_pool() {
 
 /// A process address space.
 ///
-/// An address space is a hierarchy of page tables rooted at `root_page_table`.
-/// It is a shared, reference-counted object: the root page table carries its own
-/// refcount (`PageTableRef`), and the pages this AS has mapped are held by
-/// retain references in `pages`. Cloning the AS (sharing it between threads)
-/// takes one more reference on the root table and one more reference on every
-/// held page — no new counters are introduced; the existing page/table refcounts
-/// drive the whole lifetime.
+/// An address space is a hierarchy of page tables rooted at `root_page_table`,
+/// plus the list of mappings it owns. Each mapping holds an `Arc` reference to
+/// its physical allocation, so the pages stay alive exactly as long as a
+/// mapping references them. Sharing the AS between threads (`Clone`) takes one
+/// more reference on the root table and clones every mapping (`Arc::clone`).
 ///
-/// Ownership cascade (top-down only, `AS -> page -> mapping`):
-/// - pages are owned by this AS through `pages` (retain refs);
-/// - each page owns its mappings (`PageMapping`, attached in the physical
-///   allocator) and dies with the page;
-/// - nothing references upward: pages/mappings do not know their AS.
-///
-/// When the last thread holding this AS dies, the AS drops, which releases the
-/// root table and every held page. A page dies only when the last owning AS is
-/// gone, so no manual PTE teardown is ever required.
+/// When the last thread holding this AS dies, the AS drops, releasing the root
+/// table and every mapping; a physical allocation is freed once the last
+/// mapping holding it is gone.
 pub struct Sv39AddressSpace {
     root_page_table: PageTableRef<Sv39PageTable>,
-    /// Retain references to every page this AS has mapped. Keeps the pages
-    /// alive while the AS lives; dropped (released) when the AS dies.
-    pages: Vec<PhysicalAllocation>,
+    /// The mappings this AS has installed. Keeps each backing allocation alive
+    /// while the AS lives; removed (dropped) by [`TargetAddressSpace::unmap`].
+    mappings: Vec<Sv39Mapping>,
 }
 
 impl Clone for Sv39AddressSpace {
     /// Share this AS with another thread: one more reference on the root table
-    /// and one more reference on every held page. Existing refcounts only.
+    /// and one more reference on every held allocation (Arc::clone).
     fn clone(&self) -> Self {
         let root_page_table = self.root_page_table.clone();
-        let pages = self.pages.iter().map(|p| p.clone()).collect();
+        let mappings = self.mappings.clone();
         Sv39AddressSpace {
             root_page_table,
-            pages,
+            mappings,
         }
     }
 }
@@ -69,7 +62,7 @@ impl Sv39AddressSpace {
 
         Sv39AddressSpace {
             root_page_table,
-            pages: Vec::new(),
+            mappings: Vec::new(),
         }
     }
 
@@ -95,13 +88,17 @@ impl Sv39AddressSpace {
             flags,
         );
     }
+
+    fn unmap_page(&mut self, virt_addr: VirtualAddress) {
+        self.get_l2_page_table(virt_addr).write_invalid(virt_addr.vpn_0());
+    }
 }
 
 impl TargetAddressSpace for Sv39AddressSpace {
     fn map(
         &mut self,
         virt_addr: VirtualAddress,
-        phys_alloc: PhysicalAllocation,
+        phys_alloc: Arc<PhysicalAllocation>,
         permissions: MappingPermissions,
         flags: MappingFlags,
     ) -> Mapping {
@@ -112,24 +109,36 @@ impl TargetAddressSpace for Sv39AddressSpace {
             let va = virt_addr.byte_add(offset);
             let pa = phys_addr.byte_add(offset);
 
-            // debug!("Map {va:p} {pa:p}");
             self.map_page(va, pa, permissions, flags);
         }
 
-        // The page owns this mapping (reverse mapping). The AS keeps ownership
-        // of the page itself via a retain reference so it lives while the AS
-        // lives; when the page dies, its mappings die with it.
-        let vaddr_usize: usize = virt_addr.try_into().unwrap();
-        phys_alloc.attach_mapping(vaddr_usize, permissions, flags);
-        self.pages.push(phys_alloc);
-
-        Sv39Mapping {
+        let mapping = Sv39Mapping {
             vaddr: virt_addr,
-            addr: phys_addr,
-            size,
+            alloc: phys_alloc,
             permissions,
             flags,
+        };
+        self.mappings.push(mapping.clone());
+        mapping
+    }
+
+    unsafe fn unmap(&mut self, mapping: &Mapping) {
+        for offset in (0..mapping.size()).step_by(PAGE_SIZE) {
+            let va = mapping.virt_addr().byte_add(offset);
+            self.unmap_page(va);
         }
+
+        let vaddr = mapping.virt_addr();
+        self.mappings.retain(|m| m.vaddr != vaddr);
+    }
+
+    fn map_shared(&mut self, src: &Mapping, dest_vaddr: VirtualAddress) -> Mapping {
+        self.map(
+            dest_vaddr,
+            src.alloc().clone(),
+            src.permissions(),
+            src.flags(),
+        )
     }
 
     unsafe fn switch(&self) {
@@ -142,18 +151,22 @@ impl TargetAddressSpace for Sv39AddressSpace {
     }
 }
 
-/// Lightweight read-only view of a mapping, returned from [`TargetAddressSpace::map`].
-///
-/// This does NOT own anything: ownership lives in the page (reverse mapping,
-/// kept alive by the AS via its `pages` list). It exists to satisfy the
-/// `TargetMapping` interface (virtual/physical address, size, permissions).
-#[derive(Clone, Copy)]
+/// A mapping installed into an address space: a virtual range backed by a
+/// physical allocation. Owns its allocation through an `Arc`, so the pages
+/// live exactly as long as some mapping (or the AS) references them.
+#[derive(Clone)]
 pub struct Sv39Mapping {
     vaddr: VirtualAddress,
-    addr: PhysicalAddress,
-    size: usize,
+    alloc: Arc<PhysicalAllocation>,
     permissions: MappingPermissions,
     flags: MappingFlags,
+}
+
+impl Sv39Mapping {
+    /// The backing allocation this mapping references (for sharing).
+    pub fn alloc(&self) -> &Arc<PhysicalAllocation> {
+        &self.alloc
+    }
 }
 
 impl TargetMapping for Sv39Mapping {
@@ -162,11 +175,11 @@ impl TargetMapping for Sv39Mapping {
     }
 
     fn phys_addr(&self) -> PhysicalAddress {
-        self.addr
+        self.alloc.addr()
     }
 
     fn size(&self) -> usize {
-        self.size
+        self.alloc.size()
     }
 
     fn permissions(&self) -> MappingPermissions {

@@ -38,16 +38,13 @@ fn riscv_main(_hart_id: usize, dtc: usize) -> ! {
 
     let mut address_space = AddressSpace::new();
 
-    let mappings = map_kernel_sections(&mut address_space);
+    map_kernel_sections(&mut address_space);
 
     // unsafe {
     //     address_space.switch();
     // }
 
-    let boot_context = BootContext {
-        address_space,
-        mappings,
-    };
+    let boot_context = BootContext { address_space };
 
     let time = riscv::register::time::read64();
     sbi::timer::set_timer(time + 1_000_000).expect("Can't set timer");

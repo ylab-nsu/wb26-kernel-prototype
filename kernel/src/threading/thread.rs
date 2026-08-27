@@ -142,6 +142,23 @@ pub fn spawn_user_in(entry: usize, user_sp: usize, address_space: AddressSpace) 
     }
 }
 
+/// Spawn a user thread that shares an *existing* address space with other
+/// threads. Cloning the AS takes one more reference on its root page table and
+/// clones every mapping (`Arc::clone` on the held allocations), so the AS and
+/// its pages live until the last thread using them dies.
+pub fn spawn_user_in_shared(entry: usize, user_sp: usize, address_space: &AddressSpace) -> usize {
+    unsafe {
+        let id = THREADS.len();
+        let thread = Thread::new(id, address_space.clone());
+        *thread.user_frame = TrapFrame::default().with_pc(entry).with_sp(user_sp);
+        *thread.context = Context::default()
+            .with_ra(_initial_return_trap as *const () as usize)
+            .with_sp((thread.user_frame as *mut TrapFrame) as usize);
+        THREADS.push(thread);
+        id
+    }
+}
+
 pub fn spawn_kernel(f: extern "C" fn() -> !) -> usize {
     unsafe {
         let id = THREADS.len();
