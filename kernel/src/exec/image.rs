@@ -1,4 +1,4 @@
-//! Executable file image resident in RAM (the `bprm->file` analogue).
+//! Executable file image resident in RAM.
 //!
 //! Phase-1 backing: the whole file sits at a fixed physical address in RAM
 //! (loaded by QEMU `-device loader`). The kernel reads it directly through
@@ -13,23 +13,18 @@ use object::read::ReadRef;
 use crate::exec::ExecError;
 
 /// A file image backed by a fixed RAM range.
-///
-/// No size bound is tracked: the image is assumed to be a well-formed file at
-/// `base`, and reads are served straight from memory.
 #[derive(Clone, Copy)]
 pub struct Image {
     base: *const u8,
 }
 
 impl Image {
+    /// Create an image over a RAM base.
     pub fn new(base: *const u8) -> Image {
         Image { base }
     }
 
-    /// Read `size` bytes from file offset `offset` directly into `dst`.
-    ///
-    /// RAM backing: a plain copy from the resident image. A future disk
-    /// backing would read straight into `dst` instead.
+    /// Read `size` bytes from `offset` directly into `dst`.
     pub fn read_into(&self, offset: u64, dst: *mut u8, size: usize) -> Result<(), ExecError> {
         let src = unsafe { self.base.add(offset as usize) };
         unsafe {
