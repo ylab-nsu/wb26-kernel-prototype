@@ -18,7 +18,7 @@ pub mod vm;
 pub mod pci;
 pub mod sdhci;
 
-#[cfg(feature = "kernel-tests")]
+#[cfg(feature = "kernel-unit-tests")]
 mod tests;
 
 use core::panic::PanicInfo;
@@ -29,7 +29,7 @@ use crate::threading::init::setup_threads;
 
 pub fn kernel_main(_ctx: BootContext) -> ! {
     cfg_if::cfg_if! {
-        if #[cfg(feature = "kernel-tests")] {
+        if #[cfg(feature = "kernel-unit-tests")] {
             info!("Starting kernel tests (kernel_main())");
             tests::run_kernel_tests();
 

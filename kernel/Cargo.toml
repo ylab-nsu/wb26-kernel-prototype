@@ -13,7 +13,10 @@ doctest = false
 bench = false
 
 [features]
-kernel-tests = []
+kernel-unit-tests = []
+emmc-read-test = []
+emmc-write-test = []
+emmc-mass-write-test = []
 
 [dependencies]
 #spin = "0.10.0"

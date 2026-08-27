@@ -450,7 +450,7 @@ fn main_routine(mut slot: SdhciSlot) -> Result<(), EmmcError> {
     // enable high speed and widest bus possible
     // check block size
 
-    // TODO: REMOVE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! (it's test)
+    #[cfg(any(feature = "emmc-read-test", feature = "emmc-write-test", feature = "emmc-mass-write-test"))]
     unsafe {
         let buff = PhysicalAllocator::alloc_contiguous_aligned(512, 512).unwrap();
         let buff_addr: usize = buff.addr().try_into().unwrap();
@@ -458,12 +458,29 @@ fn main_routine(mut slot: SdhciSlot) -> Result<(), EmmcError> {
         debug!("Allocated buffer for TEST: 0x{buff_addr:X}");
         assert!(buff_addr < (1 << 32));
 
-        let buff = core::slice::from_raw_parts_mut(buff_addr as *mut u8, 512);
-        for byte in buff.iter_mut() {
-            *byte = 128;
+        #[cfg(feature = "emmc-read-test")]
+        {
+            put_into_queue(EmmcDriverMessage::Op(EmmcOp::Read {block_index: 0, address: buff_addr }), EMMC_DRIVER_QUEUE.as_view());
         }
-        put_into_queue(EmmcDriverMessage::Op(EmmcOp::Write { block_index: 0, address: buff_addr }), EMMC_DRIVER_QUEUE.as_view());
-        put_into_queue(EmmcDriverMessage::Op(EmmcOp::Read {block_index: 0, address: buff_addr }), EMMC_DRIVER_QUEUE.as_view());
+        #[cfg(feature = "emmc-write-test")]
+        {
+            let buff = core::slice::from_raw_parts_mut(buff_addr as *mut u8, 512);
+            for byte in buff.iter_mut() {
+                *byte = 128;
+            }
+            put_into_queue(EmmcDriverMessage::Op(EmmcOp::Write { block_index: 0, address: buff_addr }), EMMC_DRIVER_QUEUE.as_view());
+            put_into_queue(EmmcDriverMessage::Op(EmmcOp::Read {block_index: 0, address: buff_addr }), EMMC_DRIVER_QUEUE.as_view());
+        }
+        #[cfg(feature = "emmc-mass-write-test")]
+        {
+            let buff = core::slice::from_raw_parts_mut(buff_addr as *mut u8, 512);
+            for byte in buff.iter_mut() {
+                *byte = 128;
+            }
+            for i in 0..32 {
+                put_into_queue(EmmcDriverMessage::Op(EmmcOp::Write { block_index: i, address: buff_addr }), EMMC_DRIVER_QUEUE.as_view());
+            }
+        }
     }
 
     loop {

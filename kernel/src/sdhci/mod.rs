@@ -7,11 +7,11 @@ use crate::pci::{ pci_enable_device, pci_enable_interrupt, pci_enable_bus_master
 use crate::arch::traits::TargetPciBus;
 use crate::arch::PciBus;
 
-#[cfg(not(feature = "kernel-tests"))]
+#[cfg(not(feature = "kernel-unit-tests"))]
 use sdhci_interface::*;
-#[cfg(feature = "kernel-tests")]
+#[cfg(feature = "kernel-unit-tests")]
 use crate::tests::mocks::sdhci_interface::MockSdhciInterface as SdhciInterface;
-#[cfg(feature = "kernel-tests")]
+#[cfg(feature = "kernel-unit-tests")]
 use sdhci_interface::{ SdhciCommandDesc, SdhciCommandType, SdhciResponseType, SdhciTransferMode, SdhciTransferingDirection, SdhciBlockSize, SdhciOperatingVoltage, SdhciMaxBlockLength, SdhciTimeoutClockUnit, SdhciNormalInterruptStatus, SdhciSlotRegisters, SdhciErrorInterruptStatus, SdhciErrorInterruptSignalEnable, SdhciNormalInterruptStatusEnable, SdhciErrorInterruptStatusEnable };
 
 // Bus-specific data about device attached to it

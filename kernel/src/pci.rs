@@ -1,11 +1,11 @@
 use alloc::vec::Vec;
 use crate::arch::traits::{ TargetPciBus, TargetInterruptController };
 
-#[cfg(not(feature = "kernel-tests"))]
+#[cfg(not(feature = "kernel-unit-tests"))]
 use crate::arch::{InterruptController, PciBus};
-#[cfg(feature = "kernel-tests")]
+#[cfg(feature = "kernel-unit-tests")]
 use crate::tests::mocks::pci::MockPciBus as PciBus;
-#[cfg(feature = "kernel-tests")]
+#[cfg(feature = "kernel-unit-tests")]
 use crate::tests::mocks::plic::MockInterruptController as InterruptController;
 
 // Standard PCI Configuration Space offsets
