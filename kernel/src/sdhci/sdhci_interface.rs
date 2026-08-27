@@ -142,7 +142,7 @@ pub struct SdhciHostControl {
     pub card_detect_signal: SdhciCardDetection // NOTE: Disable interrupts before changing
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[repr(u8)]
 #[bitenum(all = false)]
 pub enum SdhciOperatingVoltage {

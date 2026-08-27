@@ -1,6 +1,7 @@
 use crate::pci::*;
 use crate::tests::mocks::pci::MockPciBus;
 use crate::tests::mocks::plic::MockInterruptController;
+use crate::run_test;
 use crate::arch::traits::{ TargetPciBus, TargetInterruptController };
 
 fn test_align_up() {
@@ -163,16 +164,16 @@ fn test_register_pci_device() {
 }
 
 pub fn run_tests() {
-    test_align_up();
-    test_pci_function_is_present();
-    test_pci_enable_disable_device();
-    test_pci_enable_bus_mastering();
-    test_pci_enable_interrupt();
-    test_allocate_mmio();
-    test_probe_bar0_success();
-    test_probe_bar0_rejects_io_bar();
-    test_probe_bar0_rejects_unsupported_64bit_bar();
-    test_configure_bar0();
-    test_map_all_bars();
-    test_register_pci_device();
+    run_test!(test_align_up);
+    run_test!(test_pci_function_is_present);
+    run_test!(test_pci_enable_disable_device);
+    run_test!(test_pci_enable_bus_mastering);
+    run_test!(test_pci_enable_interrupt);
+    run_test!(test_allocate_mmio);
+    run_test!(test_probe_bar0_success);
+    run_test!(test_probe_bar0_rejects_io_bar);
+    run_test!(test_probe_bar0_rejects_unsupported_64bit_bar);
+    run_test!(test_configure_bar0);
+    run_test!(test_map_all_bars);
+    run_test!(test_register_pci_device);
 }

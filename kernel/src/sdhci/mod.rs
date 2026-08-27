@@ -1,16 +1,22 @@
 pub mod cards;
-mod sdhci_command;
-mod sdhci_interface;
+pub mod sdhci_command;
+pub mod sdhci_interface;
 
 use sdhci_command::*;
-use sdhci_interface::*;
 use crate::pci::{ pci_enable_device, pci_enable_interrupt, pci_enable_bus_mastering, PCI_BAR0_REG };
 use crate::arch::traits::TargetPciBus;
 use crate::arch::PciBus;
 
+#[cfg(not(feature = "kernel-tests"))]
+use sdhci_interface::*;
+#[cfg(feature = "kernel-tests")]
+use crate::tests::mocks::sdhci_interface::MockSdhciInterface as SdhciInterface;
+#[cfg(feature = "kernel-tests")]
+use sdhci_interface::{ SdhciCommandDesc, SdhciCommandType, SdhciResponseType, SdhciTransferMode, SdhciTransferingDirection, SdhciBlockSize, SdhciOperatingVoltage, SdhciMaxBlockLength, SdhciTimeoutClockUnit, SdhciNormalInterruptStatus, SdhciSlotRegisters, SdhciErrorInterruptStatus, SdhciErrorInterruptSignalEnable, SdhciNormalInterruptStatusEnable, SdhciErrorInterruptStatusEnable };
+
 // Bus-specific data about device attached to it
 #[derive(Copy, Clone)]
-struct SdhciSlot {
+pub struct SdhciSlot {
     slot_num: u8,
     sdhci_interface: SdhciInterface,
 }
@@ -31,11 +37,11 @@ pub enum SdhciError {
 }
 
 impl SdhciSlot {
-    fn new(slot_num: u8, sdhci_interface: SdhciInterface) -> Self {
+    pub fn new(slot_num: u8, sdhci_interface: SdhciInterface) -> Self {
         SdhciSlot { slot_num, sdhci_interface }
     }
 
-    fn init(&mut self) -> Result<(), SdhciError> {
+    pub fn init(&mut self) -> Result<(), SdhciError> {
         self.soft_reset()?;
 
         // Set timeout to (timeout_clock_freq * 2^27)
@@ -50,7 +56,7 @@ impl SdhciSlot {
     }
 
     // Identify card and spawn a driver for it
-    fn attach_card(&mut self) -> Result<(), SdhciError> {
+    pub fn attach_card(&mut self) -> Result<(), SdhciError> {
         info!("Attaching card to sdhci slot {}", self.slot_num);
 
         info!("Setting slot {} to identification state", self.slot_num);
@@ -63,7 +69,7 @@ impl SdhciSlot {
         cards::emmc::driver_task();
     }
 
-    fn power_up(&mut self, voltage: SdhciOperatingVoltage) -> Result<(), SdhciError> {
+    pub fn power_up(&mut self, voltage: SdhciOperatingVoltage) -> Result<(), SdhciError> {
         info!("Slot {} target voltage: {}",
             self.slot_num,
             match voltage {
@@ -99,7 +105,7 @@ impl SdhciSlot {
 
     // Enables sdclock on given frequency
     // freq in KHz
-    fn set_sdclock_frequency(&mut self, freq: u32) -> Result<(), SdhciError> {
+    pub fn set_sdclock_frequency(&mut self, freq: u32) -> Result<(), SdhciError> {
         info!("Slot {} target freq: {freq}KHz", self.slot_num);
 
         let base_freq = self.sdhci_interface.capabilities().base_clock_freq();
@@ -140,13 +146,13 @@ impl SdhciSlot {
         }
     }
 
-    fn is_card_presented(&self) -> bool {
+    pub fn is_card_presented(&self) -> bool {
         let present_state = self.sdhci_interface.present_state();
 
         present_state.card_inserted()
     }
 
-    fn soft_reset(&mut self) -> Result<(), SdhciError> {
+    pub fn soft_reset(&mut self) -> Result<(), SdhciError> {
         let soft_reset_reg = self.sdhci_interface.soft_reset_control();
         self.sdhci_interface.set_soft_reset_control(soft_reset_reg.with_for_all(true));
 
@@ -166,7 +172,7 @@ impl SdhciSlot {
         }
     }
 
-    fn dump_capabilities(&self) {
+    pub fn dump_capabilities(&self) {
         let caps = self.sdhci_interface.capabilities();
 
         info!("Slot {} capabilities:", self.slot_num);
@@ -194,7 +200,7 @@ impl SdhciSlot {
         info!("\t64 bit systm bus support: {}", caps.system_bus_64());
     }
 
-    fn enable_all_interrupt_statuses(&mut self) {
+    pub fn enable_all_interrupt_statuses(&mut self) {
         let normal_interrupt_status_enable = SdhciNormalInterruptStatusEnable::new()
             .with_command_complete(true)
             .with_transfer_complete(true)
@@ -221,7 +227,7 @@ impl SdhciSlot {
         self.sdhci_interface.set_error_interrupt_status_enable(error_interrupt_status_enable);
     }
 
-    fn enable_all_error_signals(&mut self) {
+    pub fn enable_all_error_signals(&mut self) {
         let error_interrupt_signal_enable = SdhciErrorInterruptSignalEnable::new()
             .with_command_timeout(true)
             .with_command_crc(true)
@@ -236,7 +242,7 @@ impl SdhciSlot {
         self.sdhci_interface.set_error_interrupt_signal_enable(error_interrupt_signal_enable);
     }
 
-    fn clear_all_interrupt_statuses(&mut self) {
+    pub fn clear_all_interrupt_statuses(&mut self) {
         let normal_interrupt_status = SdhciNormalInterruptStatus::new()
             .with_command_complete(true)
             .with_transfer_complete(true)
@@ -262,7 +268,7 @@ impl SdhciSlot {
         self.sdhci_interface.set_error_interrupt_status(error_interrupt_status);
     }
 
-    fn send_command(&mut self, command: &SdhciCommand) -> Result<(), SdhciError> {
+    pub fn send_command(&mut self, command: &SdhciCommand) -> Result<(), SdhciError> {
         // Wait till CMD and DAT (if needed) lines are free
         // TODO: Set up some timer for timeout
         let mut lines_free = false;
@@ -300,7 +306,7 @@ impl SdhciSlot {
         Ok(())
     }
 
-    fn read_from_buffer(&self, buff: &mut [u8]) -> Result<(), SdhciError> {
+    pub fn read_from_buffer(&self, buff: &mut [u8]) -> Result<(), SdhciError> {
         // TODO: Set up some timer for timeout
         let mut buffer_read_ready = false;
         for _ in 0..1000 {
@@ -326,7 +332,7 @@ impl SdhciSlot {
         Ok(())
     }
 
-    fn wait_for_command_complete(&mut self) -> Result<(), SdhciError> {
+    pub fn wait_for_command_complete(&mut self) -> Result<(), SdhciError> {
         loop {
             let normal_int_status = self.sdhci_interface.normal_interrupt_status();
 
@@ -345,7 +351,7 @@ impl SdhciSlot {
         }
     }
 
-    fn wait_for_transfer_complete(&mut self) -> Result<(), SdhciError> {
+    pub fn wait_for_transfer_complete(&mut self) -> Result<(), SdhciError> {
         loop {
             let normal_int_status = self.sdhci_interface.normal_interrupt_status();
 
@@ -364,7 +370,7 @@ impl SdhciSlot {
         }
     }
 
-    fn read_response_normalized(&self) -> u128 {
+    pub fn read_response_normalized(&self) -> u128 {
         let mut out: u128 = 0;
 
         let parts = self.sdhci_interface.response();
