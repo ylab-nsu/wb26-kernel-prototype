@@ -70,26 +70,14 @@ pub extern "C" fn uart_driver() -> ! {
 			
             Some(UartDriverMessage::Receive { data }) => {
 				critical_section::with(|cs|{
-					let start = read_cycle();
-
-					let end = read_cycle();
-
-					println!("empty: {} cycles", end - start);
-
 					let mut uart = UART.borrow(cs).borrow_mut();
-					let start =  read_cycle();
 					uart.handle_rx_interrupt(&data);
-					let end = read_cycle();
-					println!("handle_rx_interrupt: {} cycles", end - start);
 				});
             }
             Some(UartDriverMessage::Send) => {
 				critical_section::with(|cs|{
 					let mut uart = UART.borrow(cs).borrow_mut();
-					let start =  read_cycle();
 					uart.handle_tx_interrupt();
-					let end = read_cycle();
-					println!("handle_tx_interrupt: {} cycles", end - start);
 				});
             }
             Some(UartDriverMessage::LineStatus) => {}
