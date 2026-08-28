@@ -1,11 +1,12 @@
 use crate::arch::{PlatformDuration, PlatformInstant};
+use crate::sync::{LazyLock, Mutex};
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use core::sync::atomic::AtomicBool;
+use alloc::vec::Vec;
 use core::fmt::Display;
 use core::ops::{Add, AddAssign};
+use core::sync::atomic::AtomicBool;
 use core::time::Duration;
-use crate::sync::{Mutex, LazyLock};
 
 pub struct TimerCallbackContext {
     pub handle_time: PlatformInstant,
@@ -103,93 +104,166 @@ impl TimerHandle {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct LatencySample {
+    pub seq: u64,
+    pub t_ms: u64,       // time since bench start (ms) — for time-series plots
+    pub latency_us: u64, // the measured value — for histograms
+}
+
+pub struct BenchLatency {
+    samples: Vec<LatencySample>,
+    total: Duration,
+    count: u64,
+    start: Option<PlatformInstant>,
+}
+
+impl BenchLatency {
+    pub const fn new() -> Self {
+        Self {
+            samples: Vec::new(),
+            total: Duration::from_micros(0),
+            count: 0,
+            start: None,
+        }
+    }
+
+    /// Call from the ISR/callback. O(1) amortized (Vec push), no logging here.
+    pub fn record(&mut self, latency: Duration, now: PlatformInstant) {
+        if self.start.is_none() {
+            self.start = Some(now);
+        }
+        let t_ms = Into::<Duration>::into(now.saturating_duration_since(self.start.unwrap()))
+            .as_millis() as u64;
+
+        self.samples.push(LatencySample {
+            seq: self.count,
+            t_ms,
+            latency_us: latency.as_micros() as u64,
+        });
+
+        self.total += latency;
+        self.count += 1;
+    }
+
+    pub fn average(&self) -> Duration {
+        if self.count == 0 {
+            Duration::from_micros(0)
+        } else {
+            self.total / self.count as u32
+        }
+    }
+
+    pub fn max(&self) -> u64 {
+        self.samples.iter().map(|s| s.latency_us).max().unwrap_or(0)
+    }
+
+    pub fn samples(&self) -> &[LatencySample] {
+        &self.samples
+    }
+
+    /// Emit every sample as a CSV line over your logger, for a host-side
+    /// script to capture from the serial console. Call this ONLY after
+    /// the benchmark window has closed, not during.
+    pub fn dump_csv(&self, label: &str) {
+        for s in &self.samples {
+            info!("BENCH_CSV,{},{},{},{}", label, s.seq, s.t_ms, s.latency_us);
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.samples.clear();
+        self.total = Duration::from_micros(0);
+        self.count = 0;
+        self.start = None;
+    }
+}
+
+impl Display for BenchLatency {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "Latency: avg {} us, max {} us, across {} records;",
+            self.average().as_micros(),
+            self.max(),
+            self.count,
+        )
+    }
+}
+
+pub static BENCH_STEADY: Mutex<BenchLatency> = Mutex::new(BenchLatency::new());
+pub static BENCH_SPIKE: Mutex<BenchLatency> = Mutex::new(BenchLatency::new());
+
+#[derive(Clone, Copy)]
+pub struct RunSample {
+    pub seq: u64,
+    pub cycles: u64,
+    pub time_us: u64,
+}
+
 pub struct BenchRun {
+    samples: Vec<RunSample>,
     cycles: u64,
     time: Duration,
     count: u64,
 }
 
 impl BenchRun {
-    pub fn new(cycles: u64, time: Duration) -> Self {
+    pub const fn new() -> Self {
         Self {
+            samples: Vec::new(),
+            cycles: 0,
+            time: Duration::from_micros(0),
+            count: 0,
+        }
+    }
+
+    pub fn record(&mut self, cycles: u64, time: Duration) {
+        self.samples.push(RunSample {
+            seq: self.count,
             cycles,
-            time,
-            count: 1,
+            time_us: time.as_micros() as u64,
+        });
+        self.cycles += cycles;
+        self.time += time;
+        self.count += 1;
+    }
+
+    pub fn average_cycles(&self) -> u64 {
+        if self.count == 0 {
+            0
+        } else {
+            self.cycles / self.count
         }
     }
 
-    pub fn average(&mut self) -> BenchRun {
-        BenchRun {
-            cycles: self.cycles / self.count,
-            time: self.time / self.count as u32,
-            count: self.count,
+    pub fn dump_csv(&self, label: &str) {
+        for s in &self.samples {
+            info!("BENCH_CSV,{},{},{},{}", label, s.seq, s.time_us, s.cycles);
         }
-    }
-
-}
-
-impl Display for BenchRun {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "Cycles: {}, Time: {} ms, across {} interrupts;",
-            self.cycles,
-            self.time.as_millis(),
-            self.count,
-        )
     }
 }
 
 impl AddAssign<BenchRun> for BenchRun {
-
     fn add_assign(&mut self, rhs: BenchRun) {
+        self.samples.extend_from_slice(&rhs.samples);
         self.cycles += rhs.cycles;
         self.time += rhs.time;
         self.count += rhs.count;
     }
 }
 
-pub static BENCH_RUNS: Mutex<BenchRun> = Mutex::new(BenchRun {
-    cycles: 0,
-    time: Duration::from_micros(0),
-    count: 0,
-});
-pub static BENCH_STEADY: Mutex<BenchLattency> = Mutex::new(BenchLattency { latency: Duration::from_micros(0), count: 0 });
-pub static BENCH_SPIKE: Mutex<BenchLattency> = Mutex::new(BenchLattency { latency: Duration::from_micros(0), count: 0 });
-
-pub struct BenchLattency {
-    latency: Duration,
-    count: u64,
-}
-
-impl BenchLattency {
-    pub fn new(latency: Duration) -> Self {
-        Self {
-            latency,
-            count: 1,
-        }
-    }
-
-    pub fn average(&mut self) -> BenchLattency {
-        BenchLattency {
-            latency: self.latency / self.count as u32,
-            count: self.count,
-        }
-    }
-
-    pub fn record(&mut self, latency: Duration) {
-        self.latency += latency;
-        self.count += 1;
-    }
-}
-
-impl Display for BenchLattency {
+impl Display for BenchRun {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "Latency: {} ms, across {} records;",
-            self.latency.as_millis(),
+            "Cycles: {} (avg {}), Time: {} ms, across {} interrupts;",
+            self.cycles,
+            self.average_cycles(),
+            self.time.as_millis(),
             self.count,
         )
     }
 }
+
+pub static BENCH_RUNS: Mutex<BenchRun> = Mutex::new(BenchRun::new());

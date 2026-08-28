@@ -1,7 +1,10 @@
 use crate::arch::riscv::time::{TickDuration, TickInstant};
 use crate::arch::traits::{TargetInstant, TargetTimerQueue};
 use crate::sync::Mutex;
-use crate::timers::{Timer, TimerCallback, TimerCallbackContext, TimerHandle, TimerKind, BenchRun, BENCH_RUNS};
+use crate::timers::{
+    BenchRun, RunSample, Timer, TimerCallback, TimerCallbackContext, TimerHandle, TimerKind,
+    BENCH_RUNS,
+};
 use alloc::collections::binary_heap::BinaryHeap;
 use alloc::sync::{Arc, Weak};
 use heapless::Vec;
@@ -117,8 +120,10 @@ pub fn fire_ready_timers() -> bool {
     let cycles = riscv::register::cycle::read();
     let rt = fire_timers_ready_by_time(TickInstant::now());
     let cycles_end = riscv::register::cycle::read();
-    let bench = BenchRun::new((cycles_end - cycles) as u64, (TickInstant::now() - ticks).into());
-    *BENCH_RUNS.lock() += bench;
+    BENCH_RUNS.lock().record(
+        (cycles_end - cycles) as u64,
+        (TickInstant::now() - ticks).into(),
+    );
     rt
 }
 

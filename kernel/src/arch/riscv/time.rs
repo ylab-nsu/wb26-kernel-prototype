@@ -52,6 +52,14 @@ impl TickInstant {
     pub fn get_ticks(&self) -> Tick {
         self.time_ticks
     }
+
+    pub fn saturating_duration_since(&self, other: TickInstant) -> TickDuration {
+        if self.time_ticks > other.time_ticks {
+            return TickDuration::new(self.time_ticks - other.time_ticks);
+        } else {
+            return TickDuration::new(0);
+        }
+    }
 }
 
 impl Sub<Self> for TickInstant {

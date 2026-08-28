@@ -39,11 +39,11 @@ static RNG_STATE: AtomicU64 = AtomicU64::new(0x9E3779B97F4A7C15); // any nonzero
 fn setup_reschedule_timer() {
     TimerQueue::add_repeating_timer(Duration::from_secs(1).into(), TimerCallback::reschedule());
 
-    const STEADY_POPULATION: usize = 50;
+    const STEADY_POPULATION: usize = 30;
     const STEADY_MIN_DELAY_US: u64 = 500; // 0.5ms
     const STEADY_MAX_DELAY_US: u64 = 50_000; // 50ms
     const SPIKE_INTERVAL: Duration = Duration::from_millis(750);
-    const SPIKE_SIZE: usize = 15; // extra timers landing together
+    const SPIKE_SIZE: usize = 10; // extra timers landing together
     const BENCH_DURATION: Duration = Duration::from_secs(10);
 
     /// Small atomic xorshift64 — fine for jitter, not for anything crypto-adjacent.
@@ -76,8 +76,9 @@ fn setup_reschedule_timer() {
         let _ = TimerQueue::add_oneshot_timer(
             delay,
             TimerCallback::immediate(move |_| {
-                let latency = PlatformInstant::now() - deadline;
-                BENCH_STEADY.lock().record(latency.into());
+                let now = PlatformInstant::now();
+                let latency = now - deadline;
+                BENCH_STEADY.lock().record(latency.into(), now);
 
                 if BENCH_RUNNING.load(Ordering::Relaxed) {
                     schedule_steady_timer(); // re-arm from ISR context, as in real usage
@@ -98,7 +99,7 @@ fn setup_reschedule_timer() {
                 delta.into(),
                 TimerCallback::immediate(move |_| {
                     let latency = PlatformInstant::now() - deadline;
-                    BENCH_SPIKE.lock().record(latency.into());
+                    BENCH_SPIKE.lock().record(latency.into(), now);
                 }),
             );
         }
@@ -126,23 +127,17 @@ fn setup_reschedule_timer() {
         TimerCallback::immediate(|_| {
             BENCH_RUNNING.store(false, Ordering::Relaxed);
 
-            let mut steady = BENCH_STEADY.lock();
-            steady.average();
-            info!(
-                "-------- Steady-state latency (n~{}): {}",
-                STEADY_POPULATION, steady
-            );
+            let steady = BENCH_STEADY.lock();
+            let spike = BENCH_SPIKE.lock();
+            let run = BENCH_RUNS.lock();
+            info!("-------- {}", steady);
+            info!("-------- {}", spike);
+            info!("-------- {}", run);
 
-            let mut spike = BENCH_SPIKE.lock();
-            spike.average();
-            info!(
-                "-------- Burst latency ({} timers/burst): {}",
-                SPIKE_SIZE, spike
-            );
-
-            let mut lock = BENCH_RUNS.lock();
-            lock.average();
-            info!("-------- Bench runs: {}", lock);
+            // Dump raw samples for the host-side plotting script to capture
+            steady.dump_csv("steady");
+            spike.dump_csv("spike");
+            run.dump_csv("run");
         }),
     );
 
