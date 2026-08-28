@@ -52,28 +52,28 @@ fn prot_from(p_flags: u32) -> MappingPermissions {
 }
 
 /// Validate the ELF header.
-fn validate_elf_hdr(hdr: &Elf64, endian: Endian) -> Result<(), ExecError> {
-    if hdr.e_ident.magic != elf::ELFMAG {
+fn validate_ehdr(ehdr: &Elf64, endian: Endian) -> Result<(), ExecError> {
+    if ehdr.e_ident.magic != elf::ELFMAG {
         return Err(ExecError::BadMagic);
     }
-    if hdr.e_ident.class != elf::ELFCLASS64 {
+    if ehdr.e_ident.class != elf::ELFCLASS64 {
         return Err(ExecError::UnsupportedClass);
     }
-    if hdr.e_ident.data != elf::ELFDATA2LSB {
+    if ehdr.e_ident.data != elf::ELFDATA2LSB {
         return Err(ExecError::UnsupportedEndian);
     }
-    if hdr.e_machine.get(endian) != elf::EM_RISCV {
+    if ehdr.e_machine.get(endian) != elf::EM_RISCV {
         return Err(ExecError::UnsupportedMachine);
     }
-    match hdr.e_type.get(endian) {
+    match ehdr.e_type.get(endian) {
         t if t == elf::ET_EXEC => {}
         t if t == elf::ET_DYN => return Err(ExecError::DynamicUnsupported),
         _ => return Err(ExecError::UnsupportedType),
     }
-    if hdr.e_phentsize.get(endian) as usize != core::mem::size_of::<Phdr>() {
+    if ehdr.e_phentsize.get(endian) as usize != core::mem::size_of::<Phdr>() {
         return Err(ExecError::BadPhdrEntSize);
     }
-    let phnum = hdr.e_phnum.get(endian);
+    let phnum = ehdr.e_phnum.get(endian);
     if phnum == 0 || phnum > 1024 {
         return Err(ExecError::BadPhdrCount);
     }
@@ -81,26 +81,26 @@ fn validate_elf_hdr(hdr: &Elf64, endian: Endian) -> Result<(), ExecError> {
 }
 
 /// Fetch the program-header table from the image.
-fn load_program_hdrs(
+fn load_phdrs(
     image: &mut Image,
-    elf_hdr: &Elf64,
+    ehdr: &Elf64,
     endian: Endian,
 ) -> Result<&'static [Phdr], ExecError> {
-    elf_hdr
+    ehdr
         .program_headers(endian, *image)
         .map_err(|_| ExecError::ImageFault)
 }
 
 /// Validate one program header.
-fn validate_program_hdr(program_hdr: &Phdr, endian: Endian) -> Result<(), ExecError> {
-    let file_size = program_hdr.p_filesz(endian);
-    let mem_size = program_hdr.p_memsz(endian);
+fn validate_phdr(phdr: &Phdr, endian: Endian) -> Result<(), ExecError> {
+    let file_size = phdr.p_filesz(endian);
+    let mem_size = phdr.p_memsz(endian);
 
     if mem_size < file_size {
         return Err(ExecError::MemszLtFilesz);
     }
 
-    if program_hdr.p_vaddr(endian) % 4096 != program_hdr.p_offset(endian) % 4096 {
+    if phdr.p_vaddr(endian) % 4096 != phdr.p_offset(endian) % 4096 {
         return Err(ExecError::MisalignedSegment);
     }
 
@@ -108,13 +108,13 @@ fn validate_program_hdr(program_hdr: &Phdr, endian: Endian) -> Result<(), ExecEr
 }
 
 /// Page-aligned bounds of the region to allocate for a segment.
-fn vaddr_alloc_bounds(program_hdr: &Phdr, endian: Endian) -> (u64, u64) {
+fn vaddr_alloc_bounds(phdr: &Phdr, endian: Endian) -> (u64, u64) {
     let vaddr_alloc_start = align_down(
-        program_hdr.p_vaddr(endian), 
+        phdr.p_vaddr(endian), 
         4096
     );
     let vaddr_alloc_end = align_up(
-        program_hdr.p_vaddr(endian) + program_hdr.p_memsz(endian), 
+        phdr.p_vaddr(endian) + phdr.p_memsz(endian), 
         4096
     );
     
@@ -122,18 +122,18 @@ fn vaddr_alloc_bounds(program_hdr: &Phdr, endian: Endian) -> (u64, u64) {
 }
 
 /// Single pass collecting image span and load count.
-fn analyze_program_hdrs(program_hdrs: &[Phdr], endian: Endian) -> Result<PhdrsAnalysis, ExecError> {
+fn analyze_phdrs(phdrs: &[Phdr], endian: Endian) -> Result<PhdrsAnalysis, ExecError> {
     let mut analysis = PhdrsAnalysis {
         min_vaddr: u64::MAX,
         max_vaddr: 0,
         load_count: 0,
     };
 
-    for program_hdr in program_hdrs {
-        match program_hdr.p_type(endian) {
+    for phdr in phdrs {
+        match phdr.p_type(endian) {
             elf::PT_LOAD => {
-                validate_program_hdr(program_hdr, endian)?;
-                let (vaddr_alloc_start, vaddr_alloc_end) = vaddr_alloc_bounds(program_hdr, endian);
+                validate_phdr(phdr, endian)?;
+                let (vaddr_alloc_start, vaddr_alloc_end) = vaddr_alloc_bounds(phdr, endian);
                 analysis.min_vaddr = analysis.min_vaddr.min(vaddr_alloc_start);
                 analysis.max_vaddr = analysis.max_vaddr.max(vaddr_alloc_end);
                 analysis.load_count += 1;
@@ -232,11 +232,11 @@ fn init_stack(address_space: &mut AddressSpace) {
 fn read_and_validate(image: &mut Image) -> Result<ExecMeta, ExecError> {
     let endian = LittleEndian;
 
-    let elf_hdr = Elf64::parse(*image).map_err(|_| ExecError::BadMagic)?;
-    validate_elf_hdr(elf_hdr, endian)?;
+    let ehdr = Elf64::parse(*image).map_err(|_| ExecError::BadMagic)?;
+    validate_ehdr(ehdr, endian)?;
 
-    let phdrs = load_program_hdrs(image, elf_hdr, endian)?;
-    let analysis = analyze_program_hdrs(phdrs, endian)?;
+    let phdrs = load_phdrs(image, ehdr, endian)?;
+    let analysis = analyze_phdrs(phdrs, endian)?;
 
     info!(
         "exec: image span {:x}..{:x}, {} PT_LOAD segments",
@@ -246,7 +246,7 @@ fn read_and_validate(image: &mut Image) -> Result<ExecMeta, ExecError> {
     );
 
     Ok(ExecMeta {
-        entry: elf_hdr.e_entry.get(endian),
+        entry: ehdr.e_entry.get(endian),
         phdrs,
         brk: analysis.max_vaddr,
     })
