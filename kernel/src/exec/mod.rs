@@ -23,7 +23,7 @@ pub const USER_STACK_SIZE: u64 = 16 * 4096;
 pub const USER_STACK_TOP: u64 = 0x8C00_0000;
 
 /// Load failures.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecError {
     BadMagic,
     UnsupportedClass,

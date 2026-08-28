@@ -163,6 +163,20 @@ pub struct Sv39Mapping {
 }
 
 impl Sv39Mapping {
+    pub fn new(
+        vaddr: VirtualAddress,
+        alloc: Arc<PhysicalAllocation>,
+        permissions: MappingPermissions,
+        flags: MappingFlags,
+    ) -> Self {
+        Sv39Mapping {
+            vaddr,
+            alloc,
+            permissions,
+            flags,
+        }
+    }
+
     /// The backing allocation this mapping references (for sharing).
     pub fn alloc(&self) -> &Arc<PhysicalAllocation> {
         &self.alloc

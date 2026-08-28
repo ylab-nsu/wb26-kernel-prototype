@@ -2,13 +2,13 @@ use crate::arch::AddressSpace;
 use crate::drivers::driver_task;
 use crate::threading::thread::{create_empty_thread, spawn_kernel, spawn_user_in, THREADS_INDEXES};
 
-pub struct UserProgram {
+pub struct UserProgram<AddrSpace> {
     pub entry: usize,
     pub sp: usize,
-    pub address_space: AddressSpace,
+    pub address_space: AddrSpace,
 }
 
-pub fn spawn_user_program(program: UserProgram) -> usize {
+pub fn spawn_user_program(program: UserProgram<AddressSpace>) -> usize {
     spawn_user_in(program.entry, program.sp, program.address_space)
 }
 

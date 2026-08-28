@@ -18,6 +18,9 @@ pub mod threading;
 pub mod timers;
 pub mod vm;
 
+#[cfg(feature = "kernel-unit-tests")]
+mod tests;
+
 use core::panic::PanicInfo;
 
 use crate::arch::traits::TargetTimerQueue;
@@ -31,6 +34,15 @@ fn setup_reschedule_timer() {
     TimerQueue::add_repeating_timer(Duration::from_secs(1).into(), TimerCallback::reschedule());
 }
 
+#[cfg(feature = "kernel-unit-tests")]
+pub fn kernel_main(_ctx: BootContext) -> ! {
+    info!("Starting kernel tests (kernel_main())");
+    tests::run_kernel_tests();
+
+    loop {}
+}
+
+#[cfg(not(feature = "kernel-unit-tests"))]
 pub fn kernel_main(_ctx: BootContext) -> ! {
     info!("Starting kernel (kernel_main())");
 

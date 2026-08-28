@@ -25,11 +25,12 @@ use crate::exec::{align_down, align_up, ExecError, USER_STACK_SIZE, USER_STACK_T
 use crate::threading::init::{spawn_user_program, UserProgram};
 use crate::vm::{MappingFlags, MappingPermissions};
 
-type Endian = LittleEndian;type Elf64 = elf::FileHeader64<Endian>;
-type Phdr = elf::ProgramHeader64<Endian>;
+pub(crate) type Endian = LittleEndian;
+pub(crate) type Elf64 = elf::FileHeader64<Endian>;
+pub(crate) type Phdr = elf::ProgramHeader64<Endian>;
 
 /// Parsed and validated ELF metadata.
-struct ExecMeta {
+pub(crate) struct ExecMeta {
     entry: u64,
     phdrs: &'static [Phdr],
     /// First free address after the highest segment (future `brk`).
@@ -37,14 +38,14 @@ struct ExecMeta {
 }
 
 /// Read-only facts collected in the analysis pass.
-struct PhdrsAnalysis {
-    min_vaddr: u64,
-    max_vaddr: u64,
-    load_count: u32,
+pub(crate) struct PhdrsAnalysis {
+    pub(crate) min_vaddr: u64,
+    pub(crate) max_vaddr: u64,
+    pub(crate) load_count: u32,
 }
 
 /// `p_flags` -> mapping permissions.
-fn prot_from(p_flags: u32) -> MappingPermissions {
+pub(crate) fn prot_from(p_flags: u32) -> MappingPermissions {
     MappingPermissions::new()
         .with_read(p_flags & elf::PF_R.0 != 0)
         .with_write(p_flags & elf::PF_W.0 != 0)
@@ -52,7 +53,7 @@ fn prot_from(p_flags: u32) -> MappingPermissions {
 }
 
 /// Validate the ELF header.
-fn validate_ehdr(ehdr: &Elf64, endian: Endian) -> Result<(), ExecError> {
+pub(crate) fn validate_ehdr(ehdr: &Elf64, endian: Endian) -> Result<(), ExecError> {
     if ehdr.e_ident.magic != elf::ELFMAG {
         return Err(ExecError::BadMagic);
     }
@@ -81,7 +82,7 @@ fn validate_ehdr(ehdr: &Elf64, endian: Endian) -> Result<(), ExecError> {
 }
 
 /// Fetch the program-header table from the image.
-fn load_phdrs(
+pub(crate) fn load_phdrs(
     image: &mut Image,
     ehdr: &Elf64,
     endian: Endian,
@@ -92,7 +93,7 @@ fn load_phdrs(
 }
 
 /// Validate one program header.
-fn validate_phdr(phdr: &Phdr, endian: Endian) -> Result<(), ExecError> {
+pub(crate) fn validate_phdr(phdr: &Phdr, endian: Endian) -> Result<(), ExecError> {
     let file_size = phdr.p_filesz(endian);
     let mem_size = phdr.p_memsz(endian);
 
@@ -108,7 +109,7 @@ fn validate_phdr(phdr: &Phdr, endian: Endian) -> Result<(), ExecError> {
 }
 
 /// Page-aligned bounds of the region to allocate for a segment.
-fn vaddr_alloc_bounds(phdr: &Phdr, endian: Endian) -> (u64, u64) {
+pub(crate) fn vaddr_alloc_bounds(phdr: &Phdr, endian: Endian) -> (u64, u64) {
     let vaddr_alloc_start = align_down(
         phdr.p_vaddr(endian), 
         4096
@@ -122,7 +123,7 @@ fn vaddr_alloc_bounds(phdr: &Phdr, endian: Endian) -> (u64, u64) {
 }
 
 /// Single pass collecting image span and load count.
-fn analyze_phdrs(phdrs: &[Phdr], endian: Endian) -> Result<PhdrsAnalysis, ExecError> {
+pub(crate) fn analyze_phdrs(phdrs: &[Phdr], endian: Endian) -> Result<PhdrsAnalysis, ExecError> {
     let mut analysis = PhdrsAnalysis {
         min_vaddr: u64::MAX,
         max_vaddr: 0,
@@ -152,9 +153,9 @@ fn analyze_phdrs(phdrs: &[Phdr], endian: Endian) -> Result<PhdrsAnalysis, ExecEr
 }
 
 /// Load one `PT_LOAD`: copy file bytes, zero bss, map.
-fn map_segment(
+pub(crate) fn map_segment<A: TargetAddressSpace>(
     image: &mut Image,
-    address_space: &mut AddressSpace,
+    address_space: &mut A,
     phdr: &Phdr,
     endian: Endian,
 ) -> Result<(), ExecError> {
@@ -216,7 +217,7 @@ pub fn map_kernel_shared(address_space: &mut AddressSpace) -> Result<(), ExecErr
 }
 
 /// Map the user stack.
-fn init_stack(address_space: &mut AddressSpace) {
+pub(crate) fn init_stack<A: TargetAddressSpace>(address_space: &mut A) {
     let stack_alloc = PhysicalAllocator::alloc_contiguous(USER_STACK_SIZE as usize)
         .expect("alloc stack");
 
@@ -229,7 +230,7 @@ fn init_stack(address_space: &mut AddressSpace) {
 }
 
 /// Parse and validate the ELF header and program headers.
-fn read_and_validate(image: &mut Image) -> Result<ExecMeta, ExecError> {
+pub(crate) fn read_and_validate(image: &mut Image) -> Result<ExecMeta, ExecError> {
     let endian = LittleEndian;
 
     let ehdr = Elf64::parse(*image).map_err(|_| ExecError::BadMagic)?;
@@ -252,11 +253,14 @@ fn read_and_validate(image: &mut Image) -> Result<ExecMeta, ExecError> {
     })
 }
 
-/// Load the image into a fresh address space.
-fn load(meta: &ExecMeta, image: &mut Image) -> Result<UserProgram, ExecError> {
-    let mut address_space = AddressSpace::new();
-
-    map_kernel_shared(&mut address_space)?;
+/// Load the image into a fresh address space: map the stack and every
+/// `PT_LOAD` segment. The kernel half is mapped separately (see `run_elf`).
+pub(crate) fn load<A: TargetAddressSpace>(
+    meta: &ExecMeta,
+    image: &mut Image,
+    address_space: A,
+) -> Result<UserProgram<A>, ExecError> {
+    let mut address_space = address_space;
     init_stack(&mut address_space);
 
     for phdr in meta.phdrs {
@@ -275,7 +279,11 @@ fn load(meta: &ExecMeta, image: &mut Image) -> Result<UserProgram, ExecError> {
 /// Run an ELF image and spawn a user thread.
 pub fn run_elf(image: &mut Image) -> Result<usize, ExecError> {
     let meta = read_and_validate(image)?;
-    let program = load(&meta, image)?;
+
+    let mut address_space = AddressSpace::new();
+    map_kernel_shared(&mut address_space)?;
+
+    let program = load(&meta, image, address_space)?;
     info!("exec: entry={:#018x} brk={:#018x}", meta.entry, meta.brk);
     Ok(spawn_user_program(program))
 }
