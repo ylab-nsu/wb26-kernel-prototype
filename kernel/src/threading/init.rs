@@ -62,7 +62,7 @@ pub fn setup_threads() {
     let driver_task_id = spawn_kernel(driver_task);
     let uart_id = spawn_kernel(uart_driver);
 	// terminal task
-	let terminal_id = spawn_kernel(terminal_task);
+	//let terminal_id = spawn_kernel(terminal_task);
 	//let test_id = spawn_kernel(uart16550_rw_test);
 	
     unsafe {

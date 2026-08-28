@@ -49,10 +49,10 @@
 .align 4
 _start_trap:
     addi sp, sp, - FRAME_SIZE * REG_SIZE
+    csrrw	sp, sscratch, sp
 
-    # Сохраняем старый SP
-    addi t0, sp, FRAME_SIZE * REG_SIZE
-    sd t0, SP*REG_SIZE(sp)
+    bnez sp, 1f
+    csrrw	sp, sscratch, sp
 1:	
 
     save_gp %RA
@@ -86,6 +86,8 @@ _start_trap:
     save_gp %T5
     save_gp %T6
 
+	csrr t0, sscratch
+    sd t0, SP*REG_SIZE(sp)
     csrr t0, sepc
     sd t0, PC*REG_SIZE(sp)
 
@@ -101,39 +103,48 @@ _start_trap:
 _initial_return_trap:
 
 
-   ld t0, PC*REG_SIZE(sp)
-	csrw sepc, t0
+    ld t0, PC*REG_SIZE(sp)
+    csrw sepc, t0
+    ld t0, SP*REG_SIZE(sp)
+    csrw sscratch, t0
 
-	load_gp %RA
-	load_gp %GP
-	load_gp %TP
-	load_gp %T0
-	load_gp %T1
-	load_gp %T2
-	load_gp %S0
-	load_gp %S1
-	load_gp %A0
-	load_gp %A1
-	load_gp %A2
-	load_gp %A3
-	load_gp %A4
-	load_gp %A5
-	load_gp %A6
-	load_gp %A7
-	load_gp %S2
-	load_gp %S3
-	load_gp %S4
-	load_gp %S5
-	load_gp %S6
-	load_gp %S7
-	load_gp %S8
-	load_gp %S9
-	load_gp %S10
-	load_gp %S11
-	load_gp %T3
-	load_gp %T4
-	load_gp %T5
-	load_gp %T6
+    load_gp %RA
+    load_gp %GP
+    load_gp %TP
+    load_gp %T0
+    load_gp %T1
+    load_gp %T2
+    load_gp %S0
+    load_gp %S1
+    load_gp %A0
+    load_gp %A1
+    load_gp %A2
+    load_gp %A3
+    load_gp %A4
+    load_gp %A5
+    load_gp %A6
+    load_gp %A7
+    load_gp %S2
+    load_gp %S3
+    load_gp %S4
+    load_gp %S5
+    load_gp %S6
+    load_gp %S7
+    load_gp %S8
+    load_gp %S9
+    load_gp %S10
+    load_gp %S11
+    load_gp %T3
+    load_gp %T4
+    load_gp %T5
+    load_gp %T6
+
+
+    csrrw	sp, sscratch, sp
+
+    bnez sp, 1f
+    csrrw	sp, sscratch, sp
+1:	
 
 	addi sp, sp, FRAME_SIZE * REG_SIZE
 
