@@ -922,7 +922,10 @@ fn main_routine(mut slot: SdhciSlot) -> Result<(), EmmcError> {
                             match batch.direction {
                                 EmmcDirection::Read => {
                                     emmc.complete_batch_read(batch);
-                                    emmc.print_read_result(batch);
+                                    #[cfg(any(feature = "emmc-read-test", feature = "emmc-write-test", feature = "emmc-mass-write-test"))]
+                                    {
+                                        emmc.print_read_result(batch);
+                                    }
                                 },
                                 EmmcDirection::Write => {},
                             }
