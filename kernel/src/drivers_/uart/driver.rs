@@ -1,5 +1,6 @@
 use heapless::Vec;
 
+use crate::drivers_::uart::uart16550::RX_BUFFER_COUNT;
 use crate::threading::scheduler::reschedule;
 use heapless::mpmc;
 use riscv::_export::critical_section;
@@ -7,11 +8,11 @@ use riscv::_export::critical_section;
 use super::message::{UartDriverMessage, MAX_RECEVIED_BYTES};
 use super::uart16550::UART;
 use super::registers::{read_reg, Register, Masks};
-use super::test::read_cycle;
+use super::test::{read_cycle, read_instret};
 
+static mut RBR_COUNT: usize = 0;
 pub fn get_interrupt_reason_from(addr:usize) -> Option<UartDriverMessage>{
 	let iir = read_reg(addr, Register::Iir);
-
     if iir & Masks::IIR_NO_INTERRUPT != 0 {
         return Option::None;
     }
@@ -20,8 +21,12 @@ pub fn get_interrupt_reason_from(addr:usize) -> Option<UartDriverMessage>{
     match reason {
         Masks::IIR_RECEIVED_DATA_AVAILABLE | Masks::IIR_CHARACTER_TIMEOUT => {
             let mut buffer: Vec<u8, MAX_RECEVIED_BYTES> = Vec::new();
+
             while read_reg(addr, Register::Lsr) & Masks::LSR_DATA_READY != 0 {
                 let byte = read_reg(addr, Register::Rbr);
+				unsafe {
+					RBR_COUNT+=1;
+				}
 				if buffer.push(byte).is_err() {
 					break;
 				}
@@ -39,29 +44,17 @@ pub fn get_interrupt_reason_from(addr:usize) -> Option<UartDriverMessage>{
 #[allow(deprecated)]
 pub static UART_DRIVER_QUEUE: mpmc::Queue<UartDriverMessage, 32> = mpmc::Queue::new();
 
-pub fn put_into_queue(message: UartDriverMessage, queue: &mpmc::QueueView<UartDriverMessage>) {
-    let mut message = message;
-    loop {
-        match critical_section::with(|_| {
-            let mut res = queue.enqueue(message);
-            if let Err(v) = res {
-                res = queue.enqueue(v);
-				
-            }
-			
-            res
-        }) {
-            Ok(_) => break,
-            Err(v) => {
-                message = v;
-                //info!("Cannot put element into queue, park current thread and reschedule");
-                reschedule();
-            }
-        }
-    }
+pub fn put_into_queue(
+    message: UartDriverMessage,
+    queue: &mpmc::QueueView<UartDriverMessage>,
+) -> Result<(), UartDriverMessage> {
+    critical_section::with(|_| {
+        queue.enqueue(message)
+    })
 }
 
-// TO DO СДЕЛАТЬ ГЛОБАЛЬНУЮ ОЧЕРЕДЬ
+static mut MESSAGE_COUNT: usize = 0;
+
 pub extern "C" fn uart_driver() -> ! {
     loop {
         let message: Option<UartDriverMessage> =
@@ -69,33 +62,41 @@ pub extern "C" fn uart_driver() -> ! {
         match message {
 			
             Some(UartDriverMessage::Receive { data }) => {
+				unsafe {
+					MESSAGE_COUNT += data.len();
+				}
 				critical_section::with(|cs|{
-					let start = read_cycle();
-
-					let end = read_cycle();
-
-					println!("empty: {} cycles", end - start);
-
+					//println!("RX interrupt");
 					let mut uart = UART.borrow(cs).borrow_mut();
-					let start =  read_cycle();
+					
+					//let start = read_instret();
+
+					//let end = read_instret();
+
+					//println!("empty: {} instr", end - start);
+
+				
+					//let start =  read_instret();
 					uart.handle_rx_interrupt(&data);
-					let end = read_cycle();
-					println!("handle_rx_interrupt: {} cycles", end - start);
+					//let end = read_instret();
+					
+					//println!("handle_rx_interrupt: {} instr", end - start);
 				});
             }
             Some(UartDriverMessage::Send) => {
 				critical_section::with(|cs|{
+					//println!("TX interrupt");
 					let mut uart = UART.borrow(cs).borrow_mut();
-					let start =  read_cycle();
+					//let start =  read_cycle();
 					uart.handle_tx_interrupt();
-					let end = read_cycle();
-					println!("handle_tx_interrupt: {} cycles", end - start);
+					//let end = read_cycle();
+					//println!("handle_tx_interrupt: {} cycles", end - start);
 				});
             }
-            Some(UartDriverMessage::LineStatus) => {}
+            Some(UartDriverMessage::LineStatus) => {println!("PANIC!");}
             Some(UartDriverMessage::ModemStatus) => {}
             None => {
-                //info!("UART driver yields");
+		
                 reschedule();
                 //info!("UART driver back to work");
             }
@@ -103,8 +104,9 @@ pub extern "C" fn uart_driver() -> ! {
     }
 }
 
+static mut TERMINAL_COUNT: usize = 0;
 pub extern "C" fn terminal_task() -> ! {
-    let mut buffer = [0u8; 256];
+    let mut buffer = [0u8; 512];
     let mut len = 0;
 
     loop {
@@ -112,14 +114,26 @@ pub extern "C" fn terminal_task() -> ! {
             UART.borrow(cs).borrow_mut().read()
         });
 
+		if byte.is_some() {
+			unsafe {
+				TERMINAL_COUNT += 1;
+			}
+		}
+
         match byte {
             Some(b'\n') | Some(b'\r') => {
                 if len > 0 {
+				// 	println!(
+				// 	"RBR={} MESSAGE={} RX_BUFFER={} TERMINAL={}",
+				// 	unsafe { RBR_COUNT },
+				// 	unsafe { MESSAGE_COUNT },
+				// 	unsafe { RX_BUFFER_COUNT },
+				// 	unsafe { TERMINAL_COUNT },
+				// );
                     critical_section::with(|cs| {
                         let mut uart = UART.borrow(cs).borrow_mut();
 
                         let _ = uart.write(&buffer[..len]);
-                        let _ = uart.write(b"\r\n");
                     });
 
                     len = 0;

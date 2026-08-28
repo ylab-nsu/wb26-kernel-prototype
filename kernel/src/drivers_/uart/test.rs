@@ -842,3 +842,17 @@ pub fn read_cycle() -> u64 {
 
     cycles
 }
+
+#[inline]
+pub fn read_instret() -> u64 {
+    let value: u64;
+
+    unsafe {
+        core::arch::asm!(
+            "rdinstret {}",
+            out(reg) value,
+        );
+    }
+
+    value
+}

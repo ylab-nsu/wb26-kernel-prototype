@@ -82,6 +82,8 @@ impl Masks {
     // LSR bits
     pub const LSR_DATA_READY: u8 = 1 << 0;
     pub const LSR_THR_EMPTY: u8 = 1 << 5;
+	pub const LSR_OVERRUN_ERROR: u8 = 1 << 1;
+
 
     // IER bits
     pub const IER_RX_AVAILABLE: u8 = 1 << 0;
@@ -117,6 +119,8 @@ impl Masks {
 	pub const LCR_PARITY_NONE: u8 = 0;
 	pub const LCR_PARITY_EVEN: u8 = 0b11 << 3;
 	pub const LCR_PARITY_ODD:  u8 = 0b01 << 3;
+
+
 
 	// MCR bits
 	pub const MCR_LOOPBACK: u8 = 1 << 4;

@@ -41,8 +41,9 @@ pub fn kernel_main(_ctx: BootContext) -> ! {
 		let mut uart = UART.borrow(cs).borrow_mut();
 		uart.init(TriggerLevel::Fourteen);
 		uart.enable_rx_interrupt();
-		uart.set_baud_rate(115_200);
+		uart.set_baud_rate(9600);
 		uart.set_line_config(DataBits::Eight, Parity::None, StopBits::One);
+		// uart.write(b"A lot of symbols for UART driver buffer to check its work dsdsasssssssssssssssssssssssssssssssssssssssss")
 	});
 
     unsafe {

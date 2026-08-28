@@ -129,7 +129,9 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
 			match irq {
 				10 =>{
 					if let Some(message) = uart::get_interrupt_reason_from(0x10000000) {
-    					uart::put_into_queue(message, &uart::UART_DRIVER_QUEUE);
+    					if uart::put_into_queue(message, &uart::UART_DRIVER_QUEUE).is_err(){
+							println!("Queue over");
+						}
 					}
 				}
 				_ => { println!("Interrupt: {}", irq);}
@@ -139,11 +141,31 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
 		}
 
         Trap::Interrupt(cause) => {
-             println!("exception:{cause:?}");
+			  let sepc = riscv::register::sepc::read();
+				let stval = riscv::register::stval::read();
+
+				panic!(
+					"EXCEPTION {:?}: sepc={:#x}, stval={:#x}, frame.pc={:#x}",
+					cause,
+					sepc,
+					stval,
+					frame.pc
+				);
+            panic!("exception:{cause:?}");
         }
 		
         Trap::Exception(cause) => {
-            println!("exception:{cause:?}");
+			  let sepc = riscv::register::sepc::read();
+				let stval = riscv::register::stval::read();
+
+				panic!(
+					"EXCEPTION {:?}: sepc={:#x}, stval={:#x}, frame.pc={:#x}",
+					cause,
+					sepc,
+					stval,
+					frame.pc
+				);
+            panic!("exception:{cause:?}");
         }
     }
     need_reschedule

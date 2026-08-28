@@ -20,7 +20,7 @@ pub struct UART16550<const N: usize> {
     rx_buffer: RingBuffer<N>,
     tx_buffer: RingBuffer<N>,
 }
-
+pub static mut RX_BUFFER_COUNT: usize = 0;
 impl<const N: usize> UART16550<N> {
     pub const fn new(addr: usize) -> Self {
         UART16550 {
@@ -170,25 +170,31 @@ impl<const N: usize> UART16550<N> {
         }
     }
 
+	
 	pub fn handle_rx_interrupt(&mut self, data: &[u8]) -> () {
         for &byte in data {
             if self.rx_buffer.write(byte).is_err() {
                 break;
             }
+
+			unsafe {
+				RX_BUFFER_COUNT +=1;
+			}
         }
     }
 
 
 	fn fill_tx_fifo(&mut self) {
-		  // UART готов принять данные
-        let lsr = read_reg(self.addr, Register::Lsr);
-
-        if lsr & Masks::LSR_THR_EMPTY == 0 {
-            return;
-        }
-
+	
 		// Заполняем аппаратный TX FIFO
         for _ in 0..TX_FIFO_SIZE {
+
+			// UART готов принять данные
+			let lsr = read_reg(self.addr, Register::Lsr);
+
+			if lsr & Masks::LSR_THR_EMPTY == 0 {
+				return;
+			}
 
             // Больше нечего отправлять
             if self.tx_buffer.is_empty() {
@@ -213,5 +219,5 @@ impl<const N: usize> UART16550<N> {
 
 
 }
-pub static UART: Mutex<RefCell<UART16550<256>>> =
+pub static UART: Mutex<RefCell<UART16550<512>>> =
     Mutex::new(RefCell::new(UART16550::new(0x1000_0000)));

@@ -1,0 +1,19 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://microsoft.com
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Remote attach",
+            "type": "lldb",
+            "request": "attach",
+            "targetCreateCommands": [
+                "target create \"${workspaceFolder}/target/riscv64gc-unknown-none-elf/debug/kernel\""
+            ],
+            "processCreateCommands": [
+                "gdb-remote localhost:1234"
+            ]
+        }
+    ]
+}

@@ -1,6 +1,6 @@
 use heapless::Vec;
 
-pub const MAX_RECEVIED_BYTES: usize = 16;
+pub const MAX_RECEVIED_BYTES: usize = 64;
 
 pub enum UartDriverMessage {
     Receive {
