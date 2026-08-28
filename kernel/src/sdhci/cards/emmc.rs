@@ -5,7 +5,6 @@ use crate::threading::scheduler::reschedule;
 use heapless::{ mpmc, Vec };
 use riscv::_export::critical_section;
 use bitfield_struct::{ bitfield, bitenum };
-use core::ptr::{ read_volatile, write_volatile };
 use crate::sdhci::sdhci_command::*;
 use crate::sdhci::{ SdhciCommandDesc, SdhciCommandType, SdhciResponseType, SdhciError, SdhciSlot, SdhciTransferMode, SdhciTransferingDirection, SdhciBlockSize, SdhciOperatingVoltage };
 
@@ -89,14 +88,11 @@ impl Adma2DescriptorTable {
             let descriptor = (self.physical_address() as *mut Adma2Descriptor)
                 .add(descriptor_index);
 
-            write_volatile(
-                descriptor,
-                Adma2Descriptor {
-                    attributes: ADMA2_VALID | ADMA2_TRANSFER,
-                    length,
-                    address: buffer_address,
-                },
-            );
+            descriptor.write(Adma2Descriptor {
+                attributes: ADMA2_VALID | ADMA2_TRANSFER,
+                length,
+                address: buffer_address,
+            });
         }
 
         self.len += 1;
@@ -116,16 +112,9 @@ impl Adma2DescriptorTable {
         unsafe {
             let descriptor = (self.physical_address() as *mut Adma2Descriptor)
                 .add(self.len - 1);
-            let descriptor_value = read_volatile(descriptor);
-
-            write_volatile(
-                descriptor,
-                Adma2Descriptor {
-                    attributes: descriptor_value.attributes | ADMA2_END,
-                    length: descriptor_value.length,
-                    address: descriptor_value.address,
-                },
-            );
+            let mut descriptor_value = descriptor.read();
+            descriptor_value.attributes |= ADMA2_END;
+            descriptor.write(descriptor_value);
         }
 
         true
@@ -551,6 +540,106 @@ impl Emmc {
 
         // TODO: Get block size as minimum between slot and eMMC capabilities
         Ok(Emmc { sdhci_slot, block_size: 512, bounce_buffer: buff, adma_descriptor_table, access_mode, rca })
+    }
+
+    // Keep the previous SDMA path so it can be used as a fallback on
+    // controllers without ADMA2 support. This path intentionally stays
+    // single-block for now, matching the old implementation.
+    #[allow(dead_code)]
+    fn serve_op(&mut self, op: EmmcOp) -> Result<(), EmmcError> {
+        let bounce_buffer_address: usize = self.bounce_buffer.addr().try_into().unwrap();
+        assert!(bounce_buffer_address < (1 << 32));
+
+        match op {
+            EmmcOp::Read {
+                block_index,
+                block_count,
+                address: _,
+            } => {
+                assert_eq!(block_count, 1);
+
+                let data_transfer_kind = SdhciDataTransferKind::DmaTransfer(
+                    SdhciDmaTransfer::Sdma {
+                        address: bounce_buffer_address as u32,
+                    },
+                );
+                let kind = SdhciCommandKind::DataTransfer(SdhciDataTransfer {
+                    block_size: SdhciBlockSize::new()
+                        .with_transfer_block_size(self.block_size)
+                        .with_host_sdma_buffer_boundary(0),
+                    block_count: 1,
+                    transfer_mode: SdhciTransferMode::new()
+                        .with_dma_enable(true)
+                        .with_block_count_enable(false)
+                        .with_auto_cmd12_enable(false)
+                        .with_data_transfer_direction_select(SdhciTransferingDirection::Read)
+                        .with_multi_block_select(false),
+                    data_transfer_kind,
+                });
+                let command = SdhciCommand {
+                    argument: block_index,
+                    command_desc: R1_COMMAND_PRESET
+                        .with_data_present(true)
+                        .with_command_type(SdhciCommandType::Normal)
+                        .with_index(17),
+                    kind,
+                };
+
+                self.sdhci_slot.send_command(&command)?;
+                self.sdhci_slot.wait_for_command_complete()?;
+
+                info!("Reading from slot {} using SDMA", self.sdhci_slot.slot_num);
+                Ok(())
+            },
+            EmmcOp::Write {
+                block_index,
+                block_count,
+                address,
+            } => {
+                assert_eq!(block_count, 1);
+
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        address as *const u8,
+                        bounce_buffer_address as *mut u8,
+                        self.block_size as usize,
+                    );
+                }
+
+                let data_transfer_kind = SdhciDataTransferKind::DmaTransfer(
+                    SdhciDmaTransfer::Sdma {
+                        address: bounce_buffer_address as u32,
+                    },
+                );
+                let kind = SdhciCommandKind::DataTransfer(SdhciDataTransfer {
+                    block_size: SdhciBlockSize::new()
+                        .with_transfer_block_size(self.block_size)
+                        .with_host_sdma_buffer_boundary(0),
+                    block_count: 1,
+                    transfer_mode: SdhciTransferMode::new()
+                        .with_dma_enable(true)
+                        .with_block_count_enable(false)
+                        .with_auto_cmd12_enable(false)
+                        .with_data_transfer_direction_select(SdhciTransferingDirection::Write)
+                        .with_multi_block_select(false),
+                    data_transfer_kind,
+                });
+                let command = SdhciCommand {
+                    command_desc: R1_COMMAND_PRESET
+                        .with_data_present(true)
+                        .with_command_type(SdhciCommandType::Normal)
+                        .with_index(24),
+                    argument: block_index,
+                    kind,
+                };
+
+                self.sdhci_slot.send_command(&command)?;
+                self.sdhci_slot.wait_for_command_complete()?;
+
+                info!("Writing to slot {} using SDMA", self.sdhci_slot.slot_num);
+                Ok(())
+            },
+        }
     }
 
     fn prepare_adma2_descriptors(&mut self, block_count: u16) -> u64 {
