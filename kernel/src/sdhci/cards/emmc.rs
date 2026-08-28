@@ -33,6 +33,8 @@ const ADMA2_END: u16 = 1 << 1;
 const ADMA2_TRANSFER: u16 = 0b10 << 4;
 const ADMA2_DESCRIPTOR_CAPACITY: usize = 16;
 const MAX_BLOCKS_PER_TRANSFER: u16 = ADMA2_DESCRIPTOR_CAPACITY as u16;
+const EMMC_TEST_PATTERN: [u8; 4] = [0xDE, 0xAD, 0xBE, 0xEF];
+const EMMC_TEST_SAMPLE_SIZE: usize = 16;
 
 #[repr(C, align(4))]
 #[derive(Copy, Clone)]
@@ -588,7 +590,7 @@ impl Emmc {
                 self.sdhci_slot.send_command(&command)?;
                 self.sdhci_slot.wait_for_command_complete()?;
 
-                info!("Reading from slot {} using SDMA", self.sdhci_slot.slot_num);
+                debug!("Reading from slot {} using SDMA", self.sdhci_slot.slot_num);
                 Ok(())
             },
             EmmcOp::Write {
@@ -636,7 +638,7 @@ impl Emmc {
                 self.sdhci_slot.send_command(&command)?;
                 self.sdhci_slot.wait_for_command_complete()?;
 
-                info!("Writing to slot {} using SDMA", self.sdhci_slot.slot_num);
+                debug!("Writing to slot {} using SDMA", self.sdhci_slot.slot_num);
                 Ok(())
             },
         }
@@ -790,18 +792,56 @@ impl Emmc {
         self.sdhci_slot.send_command(&command)?;
         self.sdhci_slot.wait_for_command_complete()?;
 
-        info!(
-            "Started ADMA2 {}: first_block={}, blocks={}, requests={}",
-            match batch.direction {
-                EmmcDirection::Read => "read",
-                EmmcDirection::Write => "write",
-            },
-            batch.first_block,
-            batch.block_count,
-            batch.operations.len(),
-        );
-
         Ok(())
+    }
+
+    fn print_read_result(&self, batch: &EmmcBatch) {
+        for operation in batch.operations.iter() {
+            let EmmcOp::Read {
+                block_index,
+                block_count,
+                address,
+            } = operation
+            else {
+                continue;
+            };
+
+            let transfer_size =
+                self.block_size as usize * *block_count as usize;
+
+            if transfer_size < EMMC_TEST_SAMPLE_SIZE {
+                continue;
+            }
+
+            let data = unsafe {
+                core::slice::from_raw_parts(
+                    *address as *const u8,
+                    EMMC_TEST_SAMPLE_SIZE,
+                )
+            };
+
+            let pattern_ok = data
+                .iter()
+                .enumerate()
+                .all(|(index, byte)| {
+                    *byte == EMMC_TEST_PATTERN[index % EMMC_TEST_PATTERN.len()]
+                });
+
+            info!("================ eMMC READ ================");
+            info!("Block {} data:", block_index);
+            info!(
+                "{:02X} {:02X} {:02X} {:02X}  {:02X} {:02X} {:02X} {:02X}  {:02X} {:02X} {:02X} {:02X}  {:02X} {:02X} {:02X} {:02X}",
+                data[0], data[1], data[2], data[3],
+                data[4], data[5], data[6], data[7],
+                data[8], data[9], data[10], data[11],
+                data[12], data[13], data[14], data[15],
+            );
+            info!(
+                "Expected: DE AD BE EF repeated -> {}",
+                if pattern_ok { "OK" } else { "MISMATCH" },
+            );
+            info!("===========================================");
+        }
     }
 }
 
@@ -880,16 +920,12 @@ fn main_routine(mut slot: SdhciSlot) -> Result<(), EmmcError> {
                     Ok(_) => { 
                         if let Some(batch) = current.as_ref() {
                             match batch.direction {
-                                EmmcDirection::Read => emmc.complete_batch_read(batch),
+                                EmmcDirection::Read => {
+                                    emmc.complete_batch_read(batch);
+                                    emmc.print_read_result(batch);
+                                },
                                 EmmcDirection::Write => {},
                             }
-
-                            info!(
-                                "ADMA2 transfer completed: first_block={}, blocks={}, requests={}",
-                                batch.first_block,
-                                batch.block_count,
-                                batch.operations.len(),
-                            );
                         }
                     },
                     Err(err) => error!("DMA error: {:?}", err),
