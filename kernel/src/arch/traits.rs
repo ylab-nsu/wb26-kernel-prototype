@@ -128,3 +128,17 @@ pub trait TargetContext: Clone {
     /// (_initial_return_trap).
     fn init(pc: usize, sp: usize) -> impl Init<Self>;
 }
+
+pub trait TargetTimer {
+    type Ticks;
+
+    fn now() -> Self::Ticks;
+}
+
+pub trait TargetAlarm: Sized {
+    type Ticks;
+
+    fn take() -> Option<Self>;
+    fn schedule(&mut self, ticks: Self::Ticks) -> Result<(), ()>;
+    fn cancel(&mut self) -> Result<(), ()>;
+}
