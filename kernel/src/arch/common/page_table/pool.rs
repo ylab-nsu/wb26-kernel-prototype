@@ -10,10 +10,15 @@ use sync_unsafe_cell::SyncUnsafeCell;
 
 use crate::{
     arch::{
-        PhysicalAddress, common::page_table::{
-            PageTableEntryState, PageTableEntryStateInner, TargetPageTable, TargetPageTableEntry, alloc::PAGE_TABLE_ALLOCATOR,
-        }, traits::TargetAddress,
-    }, sync::{Mutex, Once}, vm::{MappingFlags, MappingPermissions},
+        common::page_table::{
+            alloc::PAGE_TABLE_ALLOCATOR, PageTableEntryState, PageTableEntryStateInner,
+            TargetPageTable, TargetPageTableEntry,
+        },
+        traits::TargetAddress,
+        PhysicalAddress,
+    },
+    sync::{Mutex, Once},
+    vm::{MappingFlags, MappingPermissions},
 };
 
 pub const PAGE_TABLE_POOL_ENTRIES: usize = 64;
@@ -109,7 +114,9 @@ impl<P: TargetPageTable> PageTablePool<P> {
 
 impl<P: TargetPageTable> PageTablePool<P> {
     pub fn alloc_page_table(&self) -> PageTableRef<P> {
-        let table_idx = PAGE_TABLE_ALLOCATOR.alloc().expect("Can't allocate new page table");
+        let table_idx = PAGE_TABLE_ALLOCATOR
+            .alloc()
+            .expect("Can't allocate new page table");
 
         debug!("Allocated new page table at {table_idx}");
 
@@ -134,6 +141,11 @@ pub struct PageTableRef<P: TargetPageTable> {
     pool: NonNull<PageTablePool<P>>,
     index: usize,
 }
+
+// I have no idea if anyone controls the access
+// But I need these traits so driver messages can be stored in heapless mpmc queue
+unsafe impl<P: TargetPageTable + Send> Send for PageTableRef<P> {}
+unsafe impl<P: TargetPageTable + Send + Sync> Sync for PageTableRef<P> {}
 
 impl<P: TargetPageTable> PageTableRef<P> {
     pub fn get_phys_addr(&self) -> PhysicalAddress {

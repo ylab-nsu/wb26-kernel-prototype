@@ -2,7 +2,7 @@ use crate::syscalls::print_number;
 
 #[export_name = "og_process1"]
 pub extern "C" fn og_process1() {
-    let mut i: i32 = 10000;
+    let mut i: i32 = 100000;
     loop {
         sbi_println!("og_process1 calls print_number({i})");
         print_number(i);
@@ -13,7 +13,7 @@ pub extern "C" fn og_process1() {
 
 #[export_name = "og_process2"]
 pub extern "C" fn og_process2() {
-    let mut i: i32 = 10000;
+    let mut i: i32 = 200000;
     loop {
         sbi_println!("og_process2 calls print_number({i})");
         print_number(i);
@@ -24,7 +24,7 @@ pub extern "C" fn og_process2() {
 
 #[export_name = "og_process3"]
 pub extern "C" fn og_process3() {
-    let mut i: i32 = 10000;
+    let mut i: i32 = 300000;
     loop {
         sbi_println!("og_process3 calls print_number({i})");
         print_number(i);

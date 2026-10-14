@@ -16,16 +16,20 @@ mod syscall;
 pub mod threading;
 pub mod vm;
 
+use alloc::sync::Arc;
 use core::panic::PanicInfo;
 
 use crate::arch::{traits::TargetPlatform, Platform};
 use crate::boot::BootContext;
 use crate::threading::init::setup_threads;
 
-pub fn kernel_main(_ctx: BootContext) -> ! {
+pub fn kernel_main(ctx: BootContext) -> ! {
     info!("Starting kernel (kernel_main())");
 
-    setup_threads();
+    let BootContext { address_space } = ctx;
+    let kernel_address_space = Arc::new(address_space);
+
+    setup_threads(kernel_address_space);
     unsafe {
         Platform::ei();
     }

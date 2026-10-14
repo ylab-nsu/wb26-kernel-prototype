@@ -1,10 +1,33 @@
-use crate::arch::{traits::TargetPhysicalAllocation, PhysicalAddress, PhysicalAllocator};
+use crate::{
+    arch::traits::TargetPhysicalAllocation,
+    arch::{PhysicalAddress, PhysicalAllocator},
+};
 
 pub mod phys;
 
 pub struct RiscvPhysicalAllocation {
     addr: PhysicalAddress,
     size: usize,
+
+    fake: bool,
+}
+
+impl RiscvPhysicalAllocation {
+    pub(crate) fn new(addr: PhysicalAddress, size: usize) -> Self {
+        RiscvPhysicalAllocation {
+            addr,
+            size,
+            fake: false,
+        }
+    }
+
+    pub(crate) fn new_fake(addr: PhysicalAddress, size: usize) -> Self {
+        RiscvPhysicalAllocation {
+            addr,
+            size,
+            fake: true,
+        }
+    }
 }
 
 impl core::fmt::Debug for RiscvPhysicalAllocation {
@@ -34,6 +57,8 @@ impl TargetPhysicalAllocation for RiscvPhysicalAllocation {
 
 impl Drop for RiscvPhysicalAllocation {
     fn drop(&mut self) {
-        unsafe { PhysicalAllocator::dealloc_contiguous(self.addr, self.size) };
+        if !self.fake {
+            unsafe { PhysicalAllocator::dealloc_contiguous(self.addr, self.size) };
+        }
     }
 }

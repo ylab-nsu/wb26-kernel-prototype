@@ -1,5 +1,6 @@
 use crate::arch::traits::{TargetContext, TargetTrapFrame};
-use crate::arch::{Context, TrapFrame};
+use crate::arch::{AddressSpace, Context, TrapFrame};
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 #[repr(C)]
@@ -19,12 +20,13 @@ pub struct Thread {
     pub id: usize,
     pub context: &'static mut Context,
     pub user_frame: &'static mut TrapFrame, // Cannot be used for kernel threads
+    pub address_space: Option<Arc<AddressSpace>>,
     pub valid: bool,
     pub is_kernel: bool,
 }
 
 impl Thread {
-    unsafe fn new(id: usize) -> Self {
+    unsafe fn new(id: usize, address_space: Arc<AddressSpace>) -> Self {
         let _left = unsafe { &mut KERNEL_STACKS[id * 16] as *mut Page as usize };
         let right = unsafe { &mut KERNEL_STACKS[(id + 1) * 16] as *mut Page as usize };
 
@@ -44,9 +46,15 @@ impl Thread {
             id,
             context: unsafe { &mut *context },
             user_frame: unsafe { &mut *trap_frame },
+            address_space: Some(address_space),
             valid: true,
             is_kernel: false,
         }
+    }
+
+    pub fn terminate(&mut self) {
+        self.valid = false;
+        self.address_space.take();
     }
 }
 
@@ -81,20 +89,24 @@ pub unsafe fn get_thread(id: usize) -> &'static mut Thread {
     unsafe { THREADS.get_mut(id).unwrap() }
 }
 
-pub fn create_empty_thread() -> usize {
+pub fn create_invalid_thread() -> usize {
     unsafe {
         let id = THREADS.len();
-        let mut pr0 = Thread::new(id);
+        let mut pr0 = Thread::new(id, Arc::new(AddressSpace::new()));
         pr0.valid = false;
         THREADS.push(pr0);
         id
     }
 }
 
-pub fn spawn_user(f: extern "C" fn() -> !, user_sp: usize) -> usize {
+pub fn spawn_user(
+    f: extern "C" fn() -> !,
+    user_sp: usize,
+    address_space: Arc<AddressSpace>,
+) -> usize {
     unsafe {
         let id = THREADS.len();
-        let thread = Thread::new(id);
+        let thread = Thread::new(id, address_space);
         *thread.user_frame = TrapFrame::default().with_pc(f as usize).with_sp(user_sp);
         *thread.context = Context::default()
             .with_ra(_initial_return_trap as *const () as usize)
@@ -104,10 +116,10 @@ pub fn spawn_user(f: extern "C" fn() -> !, user_sp: usize) -> usize {
     }
 }
 
-pub fn spawn_kernel(f: extern "C" fn() -> !) -> usize {
+pub fn spawn_kernel(f: extern "C" fn() -> !, address_space: Arc<AddressSpace>) -> usize {
     unsafe {
         let id = THREADS.len();
-        let mut thread = Thread::new(id);
+        let mut thread = Thread::new(id, address_space);
         *thread.user_frame = TrapFrame::default().with_pc(f as usize).with_sp(0);
         *thread.context = Context::default()
             .with_ra(_initial_return_trap as *const () as usize)

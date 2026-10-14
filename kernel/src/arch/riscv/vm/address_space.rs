@@ -1,7 +1,8 @@
-use core::ptr::NonNull;
-
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use riscv::{asm::sfence_vma_all, register::satp};
 
+use crate::sync::Mutex;
 use crate::{
     arch::{
         common::page_table::pool::{PageTablePool, PageTableRef},
@@ -27,13 +28,17 @@ pub fn init_page_table_pool() {
 
 pub struct Sv39AddressSpace {
     root_page_table: PageTableRef<Sv39PageTable>,
+    mappings: Mutex<Vec<Sv39Mapping>>,
 }
 
 impl Sv39AddressSpace {
     pub fn new() -> Self {
         let root_page_table = PAGE_TABLE_POOL.alloc_page_table();
 
-        Sv39AddressSpace { root_page_table }
+        Sv39AddressSpace {
+            root_page_table,
+            mappings: Mutex::new(Vec::new()),
+        }
     }
 
     fn get_l2_page_table(&self, virt_addr: VirtualAddress) -> PageTableRef<Sv39PageTable> {
@@ -45,7 +50,7 @@ impl Sv39AddressSpace {
     }
 
     fn map_page(
-        &mut self,
+        &self,
         virt_addr: VirtualAddress,
         phys_addr: PhysicalAddress,
         permissions: MappingPermissions,
@@ -59,26 +64,17 @@ impl Sv39AddressSpace {
         );
     }
 
-    fn unmap_page(&mut self, virt_addr: VirtualAddress) {
+    fn unmap_page(&self, virt_addr: VirtualAddress) {
         self.get_l2_page_table(virt_addr)
             .write_invalid(virt_addr.vpn_0());
-    }
-
-    unsafe fn unmap(&mut self, virt_addr: VirtualAddress, size: usize) {
-        for offset in (0..size).step_by(PAGE_SIZE) {
-            let va = virt_addr.byte_add(offset);
-
-            debug!("Unmap {va:p}");
-            self.unmap_page(va);
-        }
     }
 }
 
 impl TargetAddressSpace for Sv39AddressSpace {
     fn map(
-        &mut self,
+        &self,
         virt_addr: VirtualAddress,
-        phys_alloc: PhysicalAllocation,
+        phys_alloc: Arc<PhysicalAllocation>,
         permissions: MappingPermissions,
         flags: MappingFlags,
     ) -> Mapping {
@@ -93,31 +89,52 @@ impl TargetAddressSpace for Sv39AddressSpace {
             self.map_page(va, pa, permissions, flags);
         }
 
-        Sv39Mapping {
+        let mapping = Sv39Mapping {
             virt_addr,
             phys_alloc,
             permissions,
             flags,
-            address_space: NonNull::from_mut(self),
+        };
+        self.mappings.lock().push(mapping.clone());
+        mapping
+    }
+
+    // No one ever tested this method
+    unsafe fn unmap(&self, mapping: &impl TargetMapping) {
+        for offset in (0..mapping.size()).step_by(PAGE_SIZE) {
+            let va = mapping.virt_addr().byte_add(offset);
+            self.unmap_page(va);
         }
+
+        let vaddr = mapping.virt_addr();
+        self.mappings.lock().retain(|m| m.virt_addr != vaddr);
+    }
+
+    fn map_shared(&self, src: &impl TargetMapping, dest_vaddr: VirtualAddress) -> Mapping {
+        self.map(
+            dest_vaddr,
+            src.alloc().clone(),
+            src.permissions(),
+            src.flags(),
+        )
     }
 
     unsafe fn switch(&self) {
         let pa = self.root_page_table.get_phys_addr();
         let ppn = pa.into_bits() >> 12;
-        debug!("Switch to new address space with PPN 0x{ppn:x}");
+        debug!("Switch to an address space with PPN 0x{ppn:x}");
 
         satp::set(satp::Mode::Sv39, 0, ppn as usize);
         sfence_vma_all();
     }
 }
 
+#[derive(Clone)]
 pub struct Sv39Mapping {
     virt_addr: VirtualAddress,
-    phys_alloc: PhysicalAllocation,
+    phys_alloc: Arc<PhysicalAllocation>,
     permissions: MappingPermissions,
     flags: MappingFlags,
-    address_space: NonNull<Sv39AddressSpace>,
 }
 
 impl TargetMapping for Sv39Mapping {
@@ -140,11 +157,17 @@ impl TargetMapping for Sv39Mapping {
     fn flags(&self) -> MappingFlags {
         self.flags
     }
-}
 
-impl Drop for Sv39Mapping {
-    fn drop(&mut self) {
-        let address_space = unsafe { self.address_space.as_mut() };
-        unsafe { address_space.unmap(self.virt_addr(), self.size()) };
+    fn alloc(&self) -> &Arc<PhysicalAllocation> {
+        &self.phys_alloc
     }
 }
+
+// Mapping is now inside its address space. We have unmap, but it doesn't work
+
+// impl Drop for Sv39Mapping {
+//     fn drop(&mut self) {
+//         let address_space = unsafe { self.address_space.as_mut() };
+//         unsafe { address_space.unmap(self.virt_addr(), self.size()) };
+//     }
+// }

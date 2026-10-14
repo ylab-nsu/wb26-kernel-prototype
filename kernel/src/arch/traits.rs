@@ -1,3 +1,5 @@
+use alloc::sync::Arc;
+
 use crate::{
     allocator::AllocatorError,
     arch::{Mapping, PhysicalAddress, PhysicalAllocation, VirtualAddress},
@@ -24,12 +26,16 @@ pub trait TargetPlatform {
 
 pub trait TargetAddressSpace {
     fn map(
-        &mut self,
+        &self,
         virt_addr: VirtualAddress,
-        phys_alloc: PhysicalAllocation,
+        phys_alloc: Arc<PhysicalAllocation>,
         permissions: MappingPermissions,
         flags: MappingFlags,
     ) -> Mapping;
+
+    unsafe fn unmap(&self, mapping: &impl TargetMapping);
+
+    fn map_shared(&self, src: &impl TargetMapping, dest_vaddr: VirtualAddress) -> Mapping;
 
     unsafe fn switch(&self);
 }
@@ -40,6 +46,7 @@ pub trait TargetMapping {
     fn size(&self) -> usize;
     fn permissions(&self) -> MappingPermissions;
     fn flags(&self) -> MappingFlags;
+    fn alloc(&self) -> &Arc<PhysicalAllocation>;
 }
 
 pub trait TargetDebugWriter: core::fmt::Write {

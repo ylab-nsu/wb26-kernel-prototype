@@ -1,6 +1,7 @@
-use crate::arch::traits::TargetPlatform;
-use crate::arch::Platform;
+use crate::arch::traits::TargetAddressSpace;
+use crate::arch::AddressSpace;
 use crate::threading::scheduler::reschedule;
+use alloc::sync::{Arc, Weak};
 use heapless::mpmc;
 use riscv::_export::critical_section;
 
@@ -11,16 +12,19 @@ pub enum TestDriverMessage {
     PrintString {
         user_addr: usize,
         len: usize,
+        address_space: Arc<AddressSpace>,
     },
     WriteScull {
         user_src: usize,
         scull_dst: usize,
         count: usize,
+        address_space: Arc<AddressSpace>,
     },
     ReadScull {
         user_dst: usize,
         scull_src: usize,
         count: usize,
+        address_space: Weak<AddressSpace>, // If the address space is dead, no need to read
     },
 }
 
@@ -64,8 +68,13 @@ pub extern "C" fn driver_task() -> ! {
                 info!("Driver back to work");
             }
             Some(TestDriverMessage::PrintNumber { number }) => info!("PrintNumber: {}", number),
-            Some(TestDriverMessage::PrintString { user_addr, len }) => unsafe {
-                let ptr = user_addr.wrapping_sub(Platform::get_user_va_offset()) as *const u8;
+            Some(TestDriverMessage::PrintString {
+                user_addr,
+                len,
+                address_space,
+            }) => unsafe {
+                address_space.switch();
+                let ptr = user_addr/*.wrapping_sub(Platform::get_user_va_offset())*/ as *const u8;
                 let s = core::slice::from_raw_parts(ptr, len);
                 info!("PrintString");
                 print!("`");
@@ -76,10 +85,12 @@ pub extern "C" fn driver_task() -> ! {
                 user_src,
                 scull_dst,
                 count: len,
+                address_space,
             }) => unsafe {
+                address_space.switch();
                 info!("WriteScull something");
                 assert!(scull_dst + len <= SCULL_AREA.len());
-                let src = user_src.wrapping_sub(Platform::get_user_va_offset()) as *const u8;
+                let src = user_src/*.wrapping_sub(Platform::get_user_va_offset())*/ as *const u8;
                 let dst = SCULL_AREA.as_mut_ptr().add(scull_dst);
                 core::ptr::copy(src, dst, len);
             },
@@ -87,12 +98,18 @@ pub extern "C" fn driver_task() -> ! {
                 user_dst,
                 scull_src,
                 count: len,
+                address_space,
             }) => unsafe {
-                info!("ReadScull something");
-                assert!(scull_src + len <= SCULL_AREA.len());
-                let dst = user_dst.wrapping_sub(Platform::get_user_va_offset()) as *mut u8;
-                let src = SCULL_AREA.as_ptr().add(scull_src);
-                core::ptr::copy(src, dst, len);
+                if let Some(strong) = address_space.upgrade() {
+                    strong.switch();
+                    info!("ReadScull something");
+                    assert!(scull_src + len <= SCULL_AREA.len());
+                    let dst = user_dst/*.wrapping_sub(Platform::get_user_va_offset())*/ as *mut u8;
+                    let src = SCULL_AREA.as_ptr().add(scull_src);
+                    core::ptr::copy(src, dst, len);
+                } else {
+                    info!("ReadScull is skipped because address space for result is dead");
+                }
             },
         }
     }

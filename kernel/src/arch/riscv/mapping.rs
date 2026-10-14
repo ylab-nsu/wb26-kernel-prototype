@@ -1,113 +1,95 @@
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use crate::arch::traits::TargetMapping;
 use crate::{
     arch::{
         riscv::memory::layout::KERNEL_LAYOUT,
         traits::{TargetAddressSpace, TargetPhysicalAllocator},
         AddressSpace, Mapping, PhysicalAddress, PhysicalAllocator, VirtualAddress,
     },
+    sync::Once,
     vm::{MappingFlags, MappingPermissions},
 };
 
-fn map_section(
-    name: &str,
-    virt_start: usize,
-    virt_end: usize,
-    permissions: MappingPermissions,
-    flags: MappingFlags,
-    va_offset: usize,
-    address_space: &mut AddressSpace,
-) -> Mapping {
-    let size = virt_end - virt_start;
-    let phys_addr = PhysicalAddress::try_from(virt_start - va_offset).unwrap();
-    let phys_alloc = PhysicalAllocator::alloc_contiguous_at(phys_addr, size).unwrap();
-
-    info!("Map {name} from 0x{virt_start:x} to 0x{phys_addr:x}, size: {size:x}, perms: {permissions}, flags: {flags}");
-
-    address_space.map(
-        VirtualAddress::try_from(virt_start).unwrap(),
-        phys_alloc,
-        permissions,
-        flags,
-    )
-}
-
-pub fn map_kernel_sections(address_space: &mut AddressSpace) -> Vec<Mapping> {
-    info!("Mapping sections into kernel address space");
-
-    let sections = [
-        (
-            "text",
-            KERNEL_LAYOUT.stext,
-            KERNEL_LAYOUT.etext,
-            MappingPermissions::rx(),
-            MappingFlags::new(),
-        ),
+/// The kernel's runtime regions, one source of truth for the boot address
+/// space and for sharing the kernel half into process address spaces.
+pub fn kernel_sections() -> [(&'static str, usize, usize, MappingPermissions); 8] {
+    let layout = &KERNEL_LAYOUT;
+    [
+        ("text", layout.stext, layout.etext, MappingPermissions::rx()),
         (
             "rodata",
-            KERNEL_LAYOUT.srodata,
-            KERNEL_LAYOUT.erodata,
+            layout.srodata,
+            layout.erodata,
             MappingPermissions::ro(),
-            MappingFlags::new(),
         ),
-        (
-            "data",
-            KERNEL_LAYOUT.sdata,
-            KERNEL_LAYOUT.edata,
-            MappingPermissions::rw(),
-            MappingFlags::new(),
-        ),
-        (
-            "bss",
-            KERNEL_LAYOUT.sbss,
-            KERNEL_LAYOUT.ebss,
-            MappingPermissions::rw(),
-            MappingFlags::new(),
-        ),
-        // (
-        //     "uninit",
-        //     KERNEL_LAYOUT.suninit,
-        //     KERNEL_LAYOUT.euninit,
-        //     MappingPermissions::rx(),
-        //     MappingFlags::new(),
-        // ),
-        (
-            "heap",
-            KERNEL_LAYOUT.sheap,
-            KERNEL_LAYOUT.eheap,
-            MappingPermissions::rw(),
-            MappingFlags::new(),
-        ),
+        ("data", layout.sdata, layout.edata, MappingPermissions::rw()),
+        ("bss", layout.sbss, layout.ebss, MappingPermissions::rw()),
+        ("heap", layout.sheap, layout.eheap, MappingPermissions::rw()),
         (
             "page_table_pool",
-            KERNEL_LAYOUT.spage_table_pool,
-            KERNEL_LAYOUT.epage_table_pool,
+            layout.spage_table_pool,
+            layout.epage_table_pool,
             MappingPermissions::rw(),
-            MappingFlags::new(),
+        ),
+        (
+            "kernel_stacks",
+            layout.s_temp_kernel_stacks,
+            layout.e_temp_kernel_stacks,
+            MappingPermissions::rw(),
         ),
         (
             "stack",
-            KERNEL_LAYOUT.estack,
-            KERNEL_LAYOUT.sstack,
+            layout.estack,
+            layout.sstack,
             MappingPermissions::rw(),
-            MappingFlags::new(),
         ),
-    ];
+    ]
+}
 
-    let mappings: Vec<Mapping> = sections
-        .into_iter()
-        .map(|(name, virt_start, virt_end, permissions, flags)| {
-            map_section(
-                name,
-                virt_start,
-                virt_end,
-                permissions,
-                flags,
-                KERNEL_LAYOUT.kernel_va_offset,
-                address_space,
-            )
-        })
-        .collect();
+/// Canonical mappings of the kernel half, written once at boot. Process
+/// address spaces share the same backing allocations by copying these mappings
+/// (`map_shared`), so the kernel half is read-only afterwards.
+pub static KERNEL_MAPPINGS: Once<Vec<Mapping>> = Once::new();
 
-    mappings
+pub fn map_kernel_sections(address_space: &AddressSpace) {
+    match KERNEL_MAPPINGS.get() {
+        None => {
+            info!("Mapping sections into kernel address space");
+            let va_offset = KERNEL_LAYOUT.kernel_va_offset;
+
+            let mut registry = Vec::new();
+            for (name, start, end, perms) in kernel_sections() {
+                let size = end - start;
+                if size == 0 {
+                    continue;
+                }
+
+                let phys = PhysicalAddress::try_from(start - va_offset).unwrap();
+                let alloc = PhysicalAllocator::alloc_contiguous_at(phys, size).unwrap();
+
+                info!("Map {name} from 0x{start:x} to 0x{phys:x}, size: {size:x}, perms: {perms}");
+
+                let mapping = address_space.map(
+                    VirtualAddress::try_from(start).unwrap(),
+                    Arc::new(alloc),
+                    perms,
+                    MappingFlags::new(),
+                );
+                registry.push(mapping);
+            }
+            KERNEL_MAPPINGS.call_once(|| registry);
+        }
+        Some(mappings) => {
+            for mapping in mappings {
+                let vaddr: usize = mapping.virt_addr().try_into().unwrap();
+                address_space.map_shared(mapping, mapping.virt_addr());
+                info!(
+                    "exec: shared kernel {vaddr:#018x} (size {:#x})",
+                    mapping.size()
+                );
+            }
+        }
+    }
 }

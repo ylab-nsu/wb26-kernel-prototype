@@ -1,6 +1,9 @@
 use static_assertions::assert_impl_all;
 
-use crate::arch::traits::{TargetAddress, TargetAddressSpace, TargetContext, TargetDebugWriter, TargetMapping, TargetPhysicalAllocation, TargetPhysicalAllocator, TargetPlatform, TargetTrapFrame};
+use crate::arch::traits::{
+    TargetAddress, TargetAddressSpace, TargetContext, TargetDebugWriter, TargetMapping,
+    TargetPhysicalAllocation, TargetPhysicalAllocator, TargetPlatform, TargetTrapFrame,
+};
 
 pub mod traits;
 
@@ -22,7 +25,8 @@ cfg_select! {
         pub type TrapFrame = riscv::threading::trap::RiscvTrapFrame;
         pub type Context = riscv::threading::switch::RiscvContext;
 
-        pub use riscv::mmu::set_satp;
+        pub use riscv::mapping::map_kernel_sections;
+        pub use riscv::memory::layout::KERNEL_LAYOUT;
     }
     _ => {
         compile_error!("Unsupported platform");

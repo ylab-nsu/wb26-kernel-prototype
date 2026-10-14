@@ -317,9 +317,6 @@ SECTIONS
     __spage_table_pool = .;
     KEEP(*(.page_table_pool));
     __epage_table_pool = .;
-    __s_temp_mmu_table = .;
-    . += PAGE_SIZE * 32;
-    __e_temp_mmu_table = .;
     __s_temp_kernel_stacks = .;
     . += PAGE_SIZE * 512;
     __e_temp_kernel_stacks = .;

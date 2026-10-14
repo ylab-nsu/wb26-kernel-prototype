@@ -44,7 +44,7 @@ impl TargetPhysicalAllocator for RiscvPhysicalAllocator {
     fn alloc_contiguous(size: usize) -> Result<PhysicalAllocation, AllocatorError> {
         let (addr, size) = Self::get_global_allocator().lock().alloc_contiguous(size)?;
 
-        Ok(RiscvPhysicalAllocation { addr, size })
+        Ok(RiscvPhysicalAllocation::new(addr, size))
     }
 
     fn alloc_contiguous_aligned(
@@ -55,7 +55,7 @@ impl TargetPhysicalAllocator for RiscvPhysicalAllocator {
             .lock()
             .alloc_contiguous_aligned(size, alignment)?;
 
-        Ok(RiscvPhysicalAllocation { addr, size })
+        Ok(RiscvPhysicalAllocation::new(addr, size))
     }
 
     fn alloc_contiguous_at(
@@ -66,7 +66,7 @@ impl TargetPhysicalAllocator for RiscvPhysicalAllocator {
             .lock()
             .alloc_contiguous_at(addr, size)?;
 
-        Ok(RiscvPhysicalAllocation { addr, size })
+        Ok(RiscvPhysicalAllocation::new(addr, size))
     }
 }
 

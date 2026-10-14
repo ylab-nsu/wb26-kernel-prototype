@@ -1,8 +1,5 @@
-use alloc::vec::Vec;
-
-use crate::arch::{AddressSpace, Mapping};
+use crate::arch::AddressSpace;
 
 pub struct BootContext {
     pub address_space: AddressSpace,
-    pub mappings: Vec<Mapping>,
 }

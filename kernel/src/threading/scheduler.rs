@@ -1,5 +1,4 @@
-use crate::arch::set_satp;
-use crate::arch::traits::TargetContext;
+use crate::arch::traits::{TargetAddressSpace, TargetContext};
 use crate::drivers::TEST_DRIVER_ANY;
 use crate::threading::thread::{
     get_current_thread_id, get_thread, get_threads_count, set_current_thread_id, THREADS_INDEXES,
@@ -57,18 +56,21 @@ pub fn reschedule() {
         (curr, next)
     };
 
+    info!("Switching threads from {} to {}", curr.id, next.id);
+
     unsafe {
         set_current_thread_id(next_thread);
         if next.is_kernel {
             riscv::register::sstatus::set_spp(riscv::register::sstatus::SPP::Supervisor);
-            set_satp(0);
         } else {
             // Setting SPP here will work only without nested interrupts
             riscv::register::sstatus::set_spp(riscv::register::sstatus::SPP::User);
-            set_satp(1);
         }
+        next.address_space
+            .as_ref()
+            .expect("Trying to switch to thread without address space")
+            .switch();
     };
 
-    info!("Switching threads from {} to {}", curr.id, next.id);
     unsafe { switch_thread(curr.context, next.context) };
 }
