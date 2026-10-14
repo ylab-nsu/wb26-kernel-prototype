@@ -27,6 +27,13 @@ cfg_select! {
 
         pub use riscv::mapping::map_kernel_sections;
         pub use riscv::memory::layout::KERNEL_LAYOUT;
+
+        pub mod time {
+            pub type PlatformTimer = super::riscv::time::Timer;
+            pub type PlatformTicks = super::riscv::time::Ticks;
+            pub type PlatformTemporal = super::riscv::time::Temporal;
+            pub const PLATFORM_TICK_HZ: PlatformTicks = super::riscv::time::TICK_HZ;
+        }
     }
     _ => {
         compile_error!("Unsupported platform");
@@ -44,3 +51,9 @@ assert_impl_all!(Mapping: TargetMapping);
 
 assert_impl_all!(TrapFrame: TargetTrapFrame);
 assert_impl_all!(Context: TargetContext);
+
+assert_impl_all!(time::PlatformTicks: num_traits::PrimInt, num_traits::Unsigned);
+assert_impl_all!(time::PlatformTemporal: num_traits::PrimInt, num_traits::Unsigned);
+const _: () = {
+    let _: time::PlatformTicks = time::PLATFORM_TICK_HZ;
+};

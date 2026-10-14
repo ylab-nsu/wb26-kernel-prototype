@@ -109,3 +109,17 @@ pub trait TargetContext: Default + Clone {
     fn with_ra(self, ra: usize) -> Self;
     fn with_sp(self, sp: usize) -> Self;
 }
+
+pub trait TargetTimer {
+    type Ticks;
+
+    fn now() -> Self::Ticks;
+}
+
+pub trait TargetAlarm: Sized {
+    type Ticks;
+
+    fn take() -> Option<Self>;
+    fn schedule(&mut self, ticks: Self::Ticks) -> Result<(), ()>;
+    fn cancel(&mut self) -> Result<(), ()>;
+}

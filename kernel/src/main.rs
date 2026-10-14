@@ -13,6 +13,7 @@ pub mod boot;
 pub mod drivers;
 pub mod sync;
 mod syscall;
+pub mod time;
 pub mod threading;
 pub mod vm;
 
