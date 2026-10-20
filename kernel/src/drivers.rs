@@ -1,9 +1,8 @@
-use crate::arch::traits::TargetAddressSpace;
-use crate::arch::AddressSpace;
+use crate::arch::traits::{TargetAddressSpace, TargetPlatform};
+use crate::arch::{AddressSpace, Platform};
 use crate::threading::scheduler::reschedule;
 use alloc::sync::{Arc, Weak};
 use heapless::mpmc;
-use riscv::_export::critical_section;
 
 pub enum TestDriverMessage {
     PrintNumber {
@@ -37,7 +36,7 @@ static mut SCULL_AREA: [u8; 1024] = [0; _];
 pub fn put_into_queue(message: TestDriverMessage, queue: &mpmc::QueueView<TestDriverMessage>) {
     let mut message = message;
     loop {
-        match critical_section::with(|_| {
+        match Platform::interrupt_free(|| {
             let mut res = queue.enqueue(message);
             if let Err(v) = res {
                 res = queue.enqueue(v);
@@ -57,7 +56,7 @@ pub fn put_into_queue(message: TestDriverMessage, queue: &mpmc::QueueView<TestDr
 
 pub extern "C" fn driver_task() -> ! {
     loop {
-        let message = critical_section::with(|_| TEST_DRIVER_QUEUE.dequeue());
+        let message = Platform::interrupt_free(|| TEST_DRIVER_QUEUE.dequeue());
         match message {
             None => {
                 info!("Driver task yields");

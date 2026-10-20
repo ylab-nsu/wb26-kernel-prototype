@@ -31,7 +31,7 @@ pub fn kernel_main(ctx: BootContext) -> ! {
 
     setup_threads(kernel_address_space);
     unsafe {
-        Platform::ei();
+        Platform::enable_interrupts();
     }
 
     loop {

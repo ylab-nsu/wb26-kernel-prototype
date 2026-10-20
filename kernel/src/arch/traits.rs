@@ -12,8 +12,13 @@ pub trait TargetPlatform {
     fn sleep();
     fn shutdown();
     fn wfi();
-    unsafe fn ei();
-    fn di();
+    fn disable_interrupts();
+    unsafe fn enable_interrupts();
+    fn interrupts_enabled() -> bool;
+    unsafe fn set_interrupts_enabled(enable: bool);
+    fn interrupt_free<F, R>(f: F) -> R
+    where
+        F: FnOnce() -> R;
     fn micros() -> u64;
     // ...
 
