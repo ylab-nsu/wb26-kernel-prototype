@@ -1,18 +1,122 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::arch::traits::{TargetAlarm, TargetTimer};
+use crate::arch::traits::{TargetAlarm, TargetTimeConverter, TargetTimer};
 
 pub type Ticks = u64;
 pub type Temporal = u64;
-pub const TICK_HZ: Ticks = 10_000_000;
 
-pub struct Timer;
+const TICK_HZ: Ticks = 10_000_000;
+const GCD_1K: Ticks = gcd(TICK_HZ, 1_000);
+const GCD_1M: Ticks = gcd(TICK_HZ, 1_000_000);
+const GCD_1G: Ticks = gcd(TICK_HZ, 1_000_000_000);
+
+const fn gcd(a: Ticks, b: Ticks) -> Ticks {
+    if b == 0 {
+        a
+    } else {
+        gcd(b, a % b)
+    }
+}
+
+pub struct Timer(());
+
+impl Timer {
+    pub fn get() -> &'static Self {
+        static INSTANCE: Timer = Timer(());
+        &INSTANCE
+    }
+}
 
 impl TargetTimer for Timer {
     type Ticks = Ticks;
 
-    fn now() -> Self::Ticks {
+    fn now(&self) -> Self::Ticks {
         riscv::register::time::read64()
+    }
+}
+
+impl TargetTimeConverter for Timer {
+    type Ticks = Ticks;
+    type Temporal = Temporal;
+
+    fn try_from_nanos(&self, nanos: Self::Temporal) -> Option<Self::Ticks> {
+        if let Some(value) = (nanos as Self::Ticks).checked_mul(TICK_HZ / GCD_1G) {
+            Some(u64::div_ceil(value, 1_000_000_000 / GCD_1G))
+        } else {
+            None
+        }
+    }
+
+    fn try_from_micros(&self, micros: Self::Temporal) -> Option<Self::Ticks> {
+        if let Some(value) = (micros as Self::Ticks).checked_mul(TICK_HZ / GCD_1M) {
+            Some(u64::div_ceil(value, 1_000_000 / GCD_1M))
+        } else {
+            None
+        }
+    }
+
+    fn try_from_millis(&self, millis: Self::Temporal) -> Option<Self::Ticks> {
+        if let Some(value) = (millis as Self::Ticks).checked_mul(TICK_HZ / GCD_1K) {
+            Some(u64::div_ceil(value, 1_000 / GCD_1K))
+        } else {
+            None
+        }
+    }
+
+    fn try_from_secs(&self, secs: Self::Temporal) -> Option<Self::Ticks> {
+        if let Some(value) = (secs as Self::Ticks).checked_mul(TICK_HZ) {
+            Some(value)
+        } else {
+            None
+        }
+    }
+
+    fn try_from_nanos_floor(&self, nanos: Self::Temporal) -> Option<Self::Ticks> {
+        if let Some(value) = (nanos as Self::Ticks).checked_mul(TICK_HZ / GCD_1G) {
+            Some(value / (1_000_000_000 / GCD_1G))
+        } else {
+            None
+        }
+    }
+
+    fn try_from_micros_floor(&self, micros: Self::Temporal) -> Option<Self::Ticks> {
+        if let Some(value) = (micros as Self::Ticks).checked_mul(TICK_HZ / GCD_1M) {
+            Some(value / (1_000_000 / GCD_1M))
+        } else {
+            None
+        }
+    }
+
+    fn try_from_millis_floor(&self, millis: Self::Temporal) -> Option<Self::Ticks> {
+        if let Some(value) = (millis as Self::Ticks).checked_mul(TICK_HZ / GCD_1K) {
+            Some(value / (1_000 / GCD_1K))
+        } else {
+            None
+        }
+    }
+
+    fn try_from_secs_floor(&self, secs: Self::Temporal) -> Option<Self::Ticks> {
+        if let Some(value) = (secs as Self::Ticks).checked_mul(TICK_HZ) {
+            Some(value)
+        } else {
+            None
+        }
+    }
+
+    fn to_nanos(&self, ticks: Self::Ticks) -> Self::Temporal {
+        (ticks * (1_000_000_000 / GCD_1G) / (TICK_HZ / GCD_1G)) as Self::Temporal
+    }
+
+    fn to_micros(&self, ticks: Self::Ticks) -> Self::Temporal {
+        (ticks * (1_000_000 / GCD_1M) / (TICK_HZ / GCD_1M)) as Self::Temporal
+    }
+
+    fn to_millis(&self, ticks: Self::Ticks) -> Self::Temporal {
+        (ticks * (1_000 / GCD_1K) / (TICK_HZ / GCD_1K)) as Self::Temporal
+    }
+
+    fn to_secs(&self, ticks: Self::Ticks) -> Self::Temporal {
+        (ticks / TICK_HZ) as Self::Temporal
     }
 }
 
@@ -21,20 +125,25 @@ pub struct Alarm(());
 impl TargetAlarm for Alarm {
     type Ticks = Ticks;
 
-    fn take() -> Option<Self> {
-        static ALARM_TAKEN: AtomicBool = AtomicBool::new(false);
-        if ALARM_TAKEN.swap(true, Ordering::Relaxed) {
-            Some(Alarm(()))
-        } else {
-            None
-        }
-    }
-
     fn schedule(&mut self, ticks: Self::Ticks) -> Result<(), ()> {
         sbi::timer::set_timer(ticks).map_err(|_| ())
     }
+}
 
-    fn cancel(&mut self) -> Result<(), ()> {
-        sbi::timer::set_timer(Self::Ticks::MAX).map_err(|_| ())
+static ALARM_TAKEN: AtomicBool = AtomicBool::new(false);
+
+impl Alarm {
+    pub fn take() -> Option<Self> {
+        if ALARM_TAKEN.swap(true, Ordering::Relaxed) {
+            None
+        } else {
+            Some(Alarm(()))
+        }
+    }
+}
+
+impl Drop for Alarm {
+    fn drop(&mut self) {
+        ALARM_TAKEN.swap(false, Ordering::Relaxed);
     }
 }

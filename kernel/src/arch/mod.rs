@@ -1,8 +1,9 @@
 use static_assertions::assert_impl_all;
 
 use crate::arch::traits::{
-    TargetAddress, TargetAddressSpace, TargetContext, TargetDebugWriter, TargetMapping,
-    TargetPhysicalAllocation, TargetPhysicalAllocator, TargetPlatform, TargetTrapFrame,
+    TargetAddress, TargetAddressSpace, TargetAlarm, TargetContext, TargetDebugWriter,
+    TargetMapping, TargetPhysicalAllocation, TargetPhysicalAllocator, TargetPlatform,
+    TargetTimeConverter, TargetTimer, TargetTrapFrame,
 };
 
 pub mod traits;
@@ -29,10 +30,11 @@ cfg_select! {
         pub use riscv::memory::layout::KERNEL_LAYOUT;
 
         pub mod time {
-            pub type PlatformTimer = super::riscv::time::Timer;
             pub type PlatformTicks = super::riscv::time::Ticks;
             pub type PlatformTemporal = super::riscv::time::Temporal;
-            pub const PLATFORM_TICK_HZ: PlatformTicks = super::riscv::time::TICK_HZ;
+            pub type Timer = super::riscv::time::Timer;
+            pub type TimeConverter = super::riscv::time::Timer;
+            pub type Alarm = super::riscv::time::Alarm;
         }
     }
     _ => {
@@ -54,6 +56,7 @@ assert_impl_all!(Context: TargetContext);
 
 assert_impl_all!(time::PlatformTicks: num_traits::PrimInt, num_traits::Unsigned);
 assert_impl_all!(time::PlatformTemporal: num_traits::PrimInt, num_traits::Unsigned);
-const _: () = {
-    let _: time::PlatformTicks = time::PLATFORM_TICK_HZ;
-};
+
+assert_impl_all!(time::Timer: TargetTimer);
+assert_impl_all!(time::TimeConverter: TargetTimeConverter);
+assert_impl_all!(time::Alarm: TargetAlarm);

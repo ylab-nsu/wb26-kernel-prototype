@@ -3,19 +3,7 @@ use core::{
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-use crate::arch::{time::{PLATFORM_TICK_HZ, PlatformTemporal, PlatformTicks, PlatformTimer}, traits::TargetTimer};
-
-const fn gcd(a: PlatformTicks, b: PlatformTicks) -> PlatformTicks {
-    if b == 0 {
-        a
-    } else {
-        gcd(b, a % b)
-    }
-}
-
-const GCD_1K: PlatformTicks = gcd(PLATFORM_TICK_HZ, 1_000);
-const GCD_1M: PlatformTicks = gcd(PLATFORM_TICK_HZ, 1_000_000);
-const GCD_1G: PlatformTicks = gcd(PLATFORM_TICK_HZ, 1_000_000_000);
+use crate::arch::{time::{PlatformTemporal, PlatformTicks, TimeConverter, Timer}, traits::{TargetTimeConverter, TargetTimer}};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct Instant {
@@ -96,7 +84,7 @@ impl Instant {
 
     pub fn now() -> Self {
         Self {
-            ticks: PlatformTimer::now(),
+            ticks: Timer::get().now(),
         }
     }
 }
@@ -180,69 +168,31 @@ impl Duration {
     }
 
     pub fn try_from_nanos(nanos: PlatformTemporal) -> Option<Self> {
-        if let Some(value) = (nanos as PlatformTicks).checked_mul(PLATFORM_TICK_HZ / GCD_1G) {
-            Some(Duration {
-                ticks: u64::div_ceil(value, 1_000_000_000 / GCD_1G),
-            })
-        } else {
-            None
-        }
+        TimeConverter::get().try_from_nanos(nanos).map(|ticks| Self { ticks })
     }
 
     pub fn try_from_micros(micros: PlatformTemporal) -> Option<Self> {
-        if let Some(value) = (micros as PlatformTicks).checked_mul(PLATFORM_TICK_HZ / GCD_1M) {
-            Some(Duration {
-                ticks: u64::div_ceil(value, 1_000_000 / GCD_1M),
-            })
-        } else {
-            None
-        }
+        TimeConverter::get().try_from_micros(micros).map(|ticks| Self { ticks })
     }
 
     pub fn try_from_millis(millis: PlatformTemporal) -> Option<Self> {
-        if let Some(value) = (millis as PlatformTicks).checked_mul(PLATFORM_TICK_HZ / GCD_1K) {
-            Some(Duration {
-                ticks: u64::div_ceil(value, 1000 / GCD_1K),
-            })
-        } else {
-            None
-        }
+        TimeConverter::get().try_from_millis(millis).map(|ticks| Self { ticks })
     }
 
     pub fn try_from_secs(seconds: PlatformTemporal) -> Option<Self> {
-        if let Some(ticks) = (seconds as PlatformTicks).checked_mul(PLATFORM_TICK_HZ) {
-            Some(Duration { ticks })
-        } else {
-            None
-        }
+        TimeConverter::get().try_from_secs(seconds).map(|ticks| Self { ticks })
     }
 
     pub fn try_from_micros_floor(micros: PlatformTemporal) -> Option<Self> {
-        if let Some(value) = (micros as PlatformTicks).checked_mul(PLATFORM_TICK_HZ / GCD_1M) {
-            Some(Duration {
-                ticks: value / (1_000_000 / GCD_1M),
-            })
-        } else {
-            None
-        }
+        TimeConverter::get().try_from_micros_floor(micros).map(|ticks| Self { ticks })
     }
 
     pub fn try_from_millis_floor(millis: PlatformTemporal) -> Option<Self> {
-        if let Some(value) = (millis as PlatformTicks).checked_mul(PLATFORM_TICK_HZ / GCD_1K) {
-            Some(Duration {
-                ticks: value / (1000 / GCD_1K),
-            })
-        } else {
-            None
-        }
+        TimeConverter::get().try_from_millis_floor(millis).map(|ticks| Self { ticks })
     }
 
     pub fn try_from_secs_floor(seconds: PlatformTemporal) -> Option<Self> {
-        if let Some(ticks) = (seconds as PlatformTicks).checked_mul(PLATFORM_TICK_HZ) {
-            Some(Duration { ticks })
-        } else {
-            None
-        }
+        TimeConverter::get().try_from_secs_floor(seconds).map(|ticks| Self { ticks })
     }
 
     pub const fn as_ticks(&self) -> PlatformTicks {
@@ -250,19 +200,19 @@ impl Duration {
     }
 
     pub fn as_nanos(&self) -> PlatformTemporal {
-        (self.ticks * (1_000_000_000 / GCD_1G) / (PLATFORM_TICK_HZ / GCD_1G)) as PlatformTemporal
+        TimeConverter::get().to_nanos(self.ticks)
     }
 
     pub fn as_micros(&self) -> PlatformTemporal {
-        (self.ticks * (1_000_000 / GCD_1M) / (PLATFORM_TICK_HZ / GCD_1M)) as PlatformTemporal
+        TimeConverter::get().to_micros(self.ticks)
     }
 
     pub fn as_millis(&self) -> PlatformTemporal {
-        (self.ticks * (1000 / GCD_1K) / (PLATFORM_TICK_HZ / GCD_1K)) as PlatformTemporal
+        TimeConverter::get().to_millis(self.ticks)
     }
 
     pub fn as_secs(&self) -> PlatformTemporal {
-        (self.ticks / PLATFORM_TICK_HZ) as PlatformTemporal
+        TimeConverter::get().to_secs(self.ticks)
     }
 
     pub const fn checked_add(&self, rhs: Self) -> Option<Self> {
