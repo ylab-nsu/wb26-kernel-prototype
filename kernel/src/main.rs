@@ -13,8 +13,9 @@ pub mod boot;
 pub mod drivers;
 pub mod sync;
 mod syscall;
-pub mod time;
 pub mod threading;
+pub mod time;
+pub mod timer_queue;
 pub mod vm;
 
 use alloc::sync::Arc;

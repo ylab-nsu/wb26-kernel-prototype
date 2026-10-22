@@ -125,7 +125,7 @@ pub struct Alarm(());
 impl TargetAlarm for Alarm {
     type Ticks = Ticks;
 
-    fn schedule(&mut self, ticks: Self::Ticks) -> Result<(), ()> {
+    fn schedule(&self, ticks: Self::Ticks) -> Result<(), ()> {
         sbi::timer::set_timer(ticks).map_err(|_| ())
     }
 }
