@@ -47,7 +47,7 @@ const fn gcd(a: Ticks, b: Ticks) -> Ticks {
 pub struct Timer(());
 
 impl Timer {
-    pub fn get() -> &'static Self {
+    pub const fn get() -> &'static Self {
         static INSTANCE: Timer = Timer(());
         &INSTANCE
     }
