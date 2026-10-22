@@ -1,5 +1,3 @@
-use core::sync::atomic::{AtomicBool, Ordering};
-
 use crate::arch::traits::{TargetAlarm, TargetTimeConverter, TargetTimer};
 
 pub type Ticks = u64;
@@ -21,7 +19,7 @@ const fn gcd(a: Ticks, b: Ticks) -> Ticks {
 pub struct Timer(());
 
 impl Timer {
-    pub fn get() -> &'static Self {
+    pub const fn get() -> &'static Self {
         static INSTANCE: Timer = Timer(());
         &INSTANCE
     }
@@ -130,20 +128,9 @@ impl TargetAlarm for Alarm {
     }
 }
 
-static ALARM_TAKEN: AtomicBool = AtomicBool::new(false);
-
 impl Alarm {
-    pub fn take() -> Option<Self> {
-        if ALARM_TAKEN.swap(true, Ordering::Relaxed) {
-            None
-        } else {
-            Some(Alarm(()))
-        }
-    }
-}
-
-impl Drop for Alarm {
-    fn drop(&mut self) {
-        ALARM_TAKEN.swap(false, Ordering::Relaxed);
+    pub const fn get() -> &'static Self {
+        static INSTANCE: Alarm = Alarm(());
+        &INSTANCE
     }
 }

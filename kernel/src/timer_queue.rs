@@ -19,7 +19,7 @@ pub struct TimerQueue {
 
 struct TimerQueueInner {
     queue: BinaryHeap<ScheduledTimer>,
-    alarm: Alarm,
+    alarm: &'static Alarm,
 }
 
 pub struct CancelHandle {
@@ -47,7 +47,7 @@ unsafe impl Send for TimerQueue {}
 unsafe impl Sync for TimerQueue {}
 
 impl TimerQueue {
-    pub const fn new(alarm: Alarm) -> Self {
+    pub const fn new(alarm: &'static Alarm) -> Self {
         Self {
             inner: InterruptMutex::new(TimerQueueInner {
                 queue: BinaryHeap::new(),
