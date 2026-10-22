@@ -1,8 +1,9 @@
 use static_assertions::assert_impl_all;
 
 use crate::arch::traits::{
-    TargetAddress, TargetAddressSpace, TargetContext, TargetDebugWriter, TargetMapping,
-    TargetPhysicalAllocation, TargetPhysicalAllocator, TargetPlatform, TargetTrapFrame,
+    TargetAddress, TargetAddressSpace, TargetAlarm, TargetContext, TargetDebugWriter,
+    TargetMapping, TargetPhysicalAllocation, TargetPhysicalAllocator, TargetPlatform,
+    TargetTimeConverter, TargetTimer, TargetTrapFrame,
 };
 
 pub mod traits;
@@ -27,6 +28,14 @@ cfg_select! {
 
         pub use riscv::mapping::map_kernel_sections;
         pub use riscv::memory::layout::KERNEL_LAYOUT;
+
+        pub mod time {
+            pub type PlatformTicks = super::riscv::time::Ticks;
+            pub type PlatformTemporal = super::riscv::time::Temporal;
+            pub type Timer = super::riscv::time::Timer;
+            pub type TimeConverter = super::riscv::time::Timer;
+            pub type Alarm = super::riscv::time::Alarm;
+        }
     }
     _ => {
         compile_error!("Unsupported platform");
@@ -44,3 +53,10 @@ assert_impl_all!(Mapping: TargetMapping);
 
 assert_impl_all!(TrapFrame: TargetTrapFrame);
 assert_impl_all!(Context: TargetContext);
+
+assert_impl_all!(time::PlatformTicks: num_traits::PrimInt, num_traits::Unsigned);
+assert_impl_all!(time::PlatformTemporal: num_traits::PrimInt, num_traits::Unsigned);
+
+assert_impl_all!(time::Timer: TargetTimer);
+assert_impl_all!(time::TimeConverter: TargetTimeConverter);
+assert_impl_all!(time::Alarm: TargetAlarm);
