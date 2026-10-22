@@ -33,7 +33,16 @@ impl TargetTimer for Timer {
     }
 }
 
-impl TargetTimeConverter for Timer {
+pub struct TimeConverter(());
+
+impl TimeConverter {
+    pub const fn get() -> &'static Self {
+        static INSTANCE: TimeConverter = TimeConverter(());
+        &INSTANCE
+    }
+}
+
+impl TargetTimeConverter for TimeConverter {
     type Ticks = Ticks;
     type Temporal = Temporal;
 
@@ -120,17 +129,17 @@ impl TargetTimeConverter for Timer {
 
 pub struct Alarm(());
 
+impl Alarm {
+    pub const fn get() -> &'static Self {
+        static INSTANCE: Alarm = Alarm(());
+        &INSTANCE
+    }
+}
+
 impl TargetAlarm for Alarm {
     type Ticks = Ticks;
 
     fn schedule(&self, ticks: Self::Ticks) -> Result<(), ()> {
         sbi::timer::set_timer(ticks).map_err(|_| ())
-    }
-}
-
-impl Alarm {
-    pub const fn get() -> &'static Self {
-        static INSTANCE: Alarm = Alarm(());
-        &INSTANCE
     }
 }
