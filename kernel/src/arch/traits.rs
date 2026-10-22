@@ -155,7 +155,7 @@ pub trait TargetTimeConverter {
     fn to_secs(&self, ticks: Self::Ticks) -> Self::Temporal;
 }
 
-pub trait TargetAlarm: Sized {
+pub trait TargetAlarm {
     type Ticks;
 
     fn set_next(&self, ticks: Self::Ticks) -> Result<(), ()>;
