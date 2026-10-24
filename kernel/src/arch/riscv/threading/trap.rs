@@ -52,6 +52,17 @@ impl TargetTrapFrame for RiscvTrapFrame {
         self
     }
 
+    fn with_arg0(mut self, arg0: usize) -> Self {
+        self.a0 = arg0;
+        self
+    }
+
+    fn set_pc(&mut self, value: usize) {
+        self.pc = value;
+    }
+    fn set_sp(&mut self, value: usize) {
+        self.sp = value;
+    }
     fn set_arg0(&mut self, value: usize) {
         self.a0 = value;
     }

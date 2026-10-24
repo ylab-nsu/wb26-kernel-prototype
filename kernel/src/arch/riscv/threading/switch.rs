@@ -1,32 +1,41 @@
 use crate::arch::traits::TargetContext;
+use core::mem::MaybeUninit;
+
+#[repr(transparent)]
+#[derive(Debug, Clone)]
+pub struct RiscvContext(MaybeUninit<RiscvContextInner>);
 
 #[repr(C)]
-#[derive(Debug, Default, Clone)]
-pub struct RiscvContext {
-    pub ra: usize,
-    pub sp: usize,
-    pub s0: usize,
-    pub s1: usize,
-    pub s2: usize,
-    pub s3: usize,
-    pub s4: usize,
-    pub s5: usize,
-    pub s6: usize,
-    pub s7: usize,
-    pub s8: usize,
-    pub s9: usize,
-    pub s10: usize,
-    pub s11: usize,
+#[derive(Debug, Clone, Copy)]
+struct RiscvContextInner {
+    ra: usize,
+    sp: usize,
+    s0: usize,
+    s1: usize,
+    s2: usize,
+    s3: usize,
+    s4: usize,
+    s5: usize,
+    s6: usize,
+    s7: usize,
+    s8: usize,
+    s9: usize,
+    s10: usize,
+    s11: usize,
 }
 
 impl TargetContext for RiscvContext {
-    fn with_ra(mut self, ra: usize) -> Self {
-        self.ra = ra;
-        self
+    unsafe fn new(initial_context_pc: usize, initial_context_sp: usize) -> Self {
+        let mut context = RiscvContext(MaybeUninit::uninit());
+        let p = context.0.as_mut_ptr();
+        unsafe {
+            (*p).ra = initial_context_pc;
+            (*p).sp = initial_context_sp;
+        }
+        context
     }
 
-    fn with_sp(mut self, sp: usize) -> Self {
-        self.sp = sp;
-        self
+    fn get_ptr(&mut self) -> *mut core::ffi::c_void {
+        self.0.as_mut_ptr() as *mut core::ffi::c_void
     }
 }

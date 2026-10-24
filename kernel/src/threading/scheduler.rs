@@ -9,14 +9,12 @@ unsafe fn switch_thread(
     next_context: &mut impl TargetContext,
 ) {
     extern "C" {
-        fn _switch_thread(curr_context: usize, next_context: usize) -> usize;
+        fn _switch_thread(
+            curr_context: *mut core::ffi::c_void,
+            next_context: *mut core::ffi::c_void,
+        ) -> usize;
     }
-    unsafe {
-        _switch_thread(
-            curr_context as *mut _ as usize,
-            next_context as *mut _ as usize,
-        )
-    };
+    unsafe { _switch_thread(curr_context.get_ptr(), next_context.get_ptr()) };
 }
 
 static mut LAST_USER: usize = unsafe { THREADS_INDEXES.user_start - 1 };
@@ -72,5 +70,5 @@ pub fn reschedule() {
             .switch();
     };
 
-    unsafe { switch_thread(curr.context, next.context) };
+    unsafe { switch_thread(&mut *curr.context.get(), &mut *next.context.get()) };
 }
