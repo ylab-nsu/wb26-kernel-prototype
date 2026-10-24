@@ -34,6 +34,8 @@ pub fn kernel_main(ctx: BootContext) -> ! {
         Platform::enable_interrupts();
     }
 
+    error!("You returned to the thread 0, this shouldn't happen!");
+
     loop {
         Platform::wfi();
     }

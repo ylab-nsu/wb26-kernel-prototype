@@ -100,12 +100,25 @@ pub trait TargetPhysicalAllocation: core::fmt::Debug + core::fmt::Display {
 pub trait TargetTrapFrame: Default + Clone {
     fn with_pc(self, pc: usize) -> Self;
     fn with_sp(self, sp: usize) -> Self;
+    fn with_arg0(self, arg0: usize) -> Self;
 
     // todo another interface
+    fn set_pc(&mut self, value: usize);
+    fn set_sp(&mut self, value: usize);
     fn set_arg0(&mut self, value: usize);
 }
 
-pub trait TargetContext: Default + Clone {
-    fn with_ra(self, ra: usize) -> Self;
-    fn with_sp(self, sp: usize) -> Self;
+/// Memory where callee-saved registers are stored when switching threads.
+/// After being initialized, can only be used as the argument for `switch_thread`.
+/// The first switch to a context corresponds to the start of a new thread.
+pub trait TargetContext: Clone {
+    /// Must provide valid initial state (destination) so after `switch_thread`
+    /// a new thread will correctly continue its execution.
+    ///
+    /// The recommended destination is the point in the trap handler
+    /// right after the Rust code executed and returned into assembly
+    /// (_initial_return_trap).
+    unsafe fn new(initial_pc: usize, initial_sp: usize) -> Self;
+    /// Get data pointer to give to assembly code that stores and reads registers.
+    fn get_ptr(&mut self) -> *mut core::ffi::c_void;
 }

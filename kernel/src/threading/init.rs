@@ -1,13 +1,11 @@
 use crate::arch::traits::TargetAddressSpace;
-use crate::arch::traits::{TargetPhysicalAllocator, TargetTrapFrame};
+use crate::arch::traits::TargetPhysicalAllocator;
 use crate::arch::{
     map_kernel_sections, AddressSpace, PhysicalAddress, PhysicalAllocator, VirtualAddress,
     KERNEL_LAYOUT,
 };
 use crate::drivers::driver_task;
-use crate::threading::thread::{
-    create_invalid_thread, get_thread, spawn_kernel, spawn_user, THREADS_INDEXES,
-};
+use crate::threading::thread::{create_invalid_thread, spawn_kernel, spawn_user, THREADS_INDEXES};
 use crate::vm::{MappingFlags, MappingPermissions};
 use alloc::sync::Arc;
 use core::arch::global_asm;
@@ -51,10 +49,7 @@ pub fn spawn_user_program_hardcoded_stack(prog: UserProgram) {
         }
         NEXT_USER_STACK = stack_end;
     }
-    let id = spawn_user(unsafe { crt0 }, stack_end, prog.address_space);
-    unsafe {
-        get_thread(id).user_frame.set_arg0(prog.entry);
-    }
+    let _ = spawn_user(unsafe { crt0 }, stack_end, prog.address_space, prog.entry);
 }
 
 pub fn setup_threads(kernel_address_space: Arc<AddressSpace>) {

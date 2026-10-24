@@ -48,12 +48,11 @@
 .global _start_trap
 .align 4
 _start_trap:
-    addi sp, sp, - FRAME_SIZE * REG_SIZE
     csrrw	sp, sscratch, sp
-
     bnez sp, 1f
     csrrw	sp, sscratch, sp
 1:	
+    addi sp, sp, - FRAME_SIZE * REG_SIZE
 
     save_gp %RA
     save_gp %GP
@@ -139,13 +138,10 @@ _initial_return_trap:
     load_gp %T5
     load_gp %T6
 
+	addi sp, sp, FRAME_SIZE * REG_SIZE
 
     csrrw	sp, sscratch, sp
-
     bnez sp, 1f
     csrrw	sp, sscratch, sp
 1:	
-
-	addi sp, sp, FRAME_SIZE * REG_SIZE
-
 	sret

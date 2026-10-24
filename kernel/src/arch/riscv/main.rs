@@ -30,7 +30,7 @@ fn riscv_main(_hart_id: usize, dtc: usize) -> ! {
 
     debug!("{KERNEL_LAYOUT:#x?}");
 
-    unsafe { asm!("csrw sscratch, sp", options(nostack)) };
+    unsafe { asm!("csrw sscratch, zero", options(nostack)) };
 
     unsafe {
         riscv::register::sstatus::set_sum();
