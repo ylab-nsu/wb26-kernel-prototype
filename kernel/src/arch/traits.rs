@@ -3,6 +3,7 @@ use crate::{
     allocator::AllocatorError,
     arch::{Mapping, PhysicalAddress, PhysicalAllocation, VirtualAddress},
     vm::{MappingFlags, MappingPermissions},
+    threading::trap::{ TrapHandlerRegistrationError, TrapCause },
 };
 use alloc::sync::Arc;
 use pinned_init::Init;
@@ -159,4 +160,8 @@ pub trait TargetAlarm {
     type Ticks;
 
     fn set_next(&self, ticks: Self::Ticks) -> Result<(), ()>;
+}
+
+pub trait TargetInterruptController {
+    fn set_kernel_trap_handler(handler: fn(TrapCause) -> bool) -> Result<(), TrapHandlerRegistrationError>;
 }

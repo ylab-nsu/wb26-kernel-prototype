@@ -34,6 +34,8 @@ critical-section = { version = "1.2.0", features = ["restore-state-u8"] }
 pinned-init = { version = "0.0.10", default-features = false, features = ["alloc"] }
 derive_setters = "0.1.9"
 num-traits = { version = "0.2", default-features = false }
+once_cell_no_std = "0.2.1"
+atomic_fn = { git = "https://github.com/kupiakos/atomic_fn.git", rev = "75e1860c0515a814bd62609e211022ea5e6e03c7" }
 
 [build-dependencies]
 llvm-tools = "0.1.1"

@@ -17,6 +17,7 @@ pub mod threading;
 pub mod time;
 pub mod timer_queue;
 pub mod vm;
+pub mod services;
 
 use alloc::sync::Arc;
 use core::panic::PanicInfo;

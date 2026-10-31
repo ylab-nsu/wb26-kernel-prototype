@@ -3,7 +3,7 @@ use static_assertions::assert_impl_all;
 use crate::arch::traits::{
     TargetAddress, TargetAddressSpace, TargetAlarm, TargetContext, TargetDebugWriter,
     TargetMapping, TargetPhysicalAllocation, TargetPhysicalAllocator, TargetPlatform,
-    TargetTimeConverter, TargetTimer, TargetTrapFrame,
+    TargetTimeConverter, TargetTimer, TargetTrapFrame, TargetInterruptController,
 };
 
 pub mod traits;
@@ -23,6 +23,7 @@ cfg_select! {
         pub type AddressSpace = riscv::vm::address_space::Sv39AddressSpace;
         pub type Mapping = riscv::vm::address_space::Sv39Mapping;
 
+        pub type InterruptController = riscv::threading::trap::RiscvInterruptController;
         pub type TrapFrame = riscv::threading::trap::RiscvTrapFrame;
         pub type Context = riscv::threading::switch::RiscvContext;
 
@@ -51,6 +52,7 @@ assert_impl_all!(DebugWriter: TargetDebugWriter);
 assert_impl_all!(AddressSpace: TargetAddressSpace);
 assert_impl_all!(Mapping: TargetMapping);
 
+assert_impl_all!(InterruptController: TargetInterruptController);
 assert_impl_all!(TrapFrame: TargetTrapFrame);
 assert_impl_all!(Context: TargetContext);
 
