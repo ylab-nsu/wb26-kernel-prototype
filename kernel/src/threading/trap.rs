@@ -1,4 +1,5 @@
 pub enum ExceptionKind {
+    InstructionFault{ address: usize },
     Unknown,
 }
 
@@ -9,6 +10,7 @@ pub enum TrapCause {
     ExternalInterrupt(u8),
 }
 
+#[derive(Debug)]
 pub enum TrapHandlerRegistrationError {
     AlreadyOccupied,
 }

@@ -1,8 +1,7 @@
 use crate::arch::TrapFrame;
 use crate::{
     arch::traits::{TargetTrapFrame, TargetInterruptController},
-    threading::trap::{TrapCause, TrapHandlerRegistrationError},
-    syscall::handle_syscall,
+    threading::trap::{TrapCause, TrapHandlerRegistrationError, ExceptionKind},
 };
 use once_cell_no_std::OnceCell;
 use riscv::interrupt::{Exception, Interrupt, Trap};
@@ -154,31 +153,40 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
 
     info!("Trap cause: {x:?}");
 
-    let mut need_reschedule = false;
+    if let Some(handler) = KERNEL_TRAP_HANDLER.get() {
+        match x {
+            Trap::Interrupt(Interrupt::SupervisorTimer) => {
+                handler(TrapCause::Timer)
+            },
+            Trap::Exception(Exception::UserEnvCall) => {
+                // println!("Received non-SBI UserEnvCall");
+                let ret = handler(TrapCause::SysCall {
+                        syscall_number: frame.a7,
+                        arg1: frame.a0, 
+                        arg2: frame.a1, 
+                        arg3: frame.a2, 
+                        arg4: frame.a3,
+                });
+                frame.pc += 4;
+                ret
+            }
 
-    match x {
-        Trap::Interrupt(Interrupt::SupervisorTimer) => {
-            need_reschedule = crate::TIMER_QUEUE.handle_timers();
-        }
+            Trap::Exception(Exception::InstructionFault) => {
+                sbi::timer::set_timer(u64::MAX).expect("Can't set timer");
+                let epc = riscv::register::sepc::read();
+                error!("InstructionFault {epc:x} {}", frame.pc);
 
-        Trap::Exception(Exception::UserEnvCall) => {
-            // println!("Received non-SBI UserEnvCall");
-            handle_syscall(frame.a7, frame.a0, frame.a1, frame.a2, frame.a3);
-            frame.pc += 4;
-        }
+                handler(TrapCause::Exception(ExceptionKind::InstructionFault{ address: epc }))
+            }
 
-        Trap::Exception(Exception::InstructionFault) => {
-            sbi::timer::set_timer(u64::MAX).expect("Can't set timer");
-            let epc = riscv::register::sepc::read();
-            panic!("InstructionFault {epc:x} {}", frame.pc);
+            Trap::Interrupt(cause) => {
+                println!("interrupt:{cause:?}");
+                false
+            }
+            Trap::Exception(cause) => {
+                println!("exception:{cause:?}");
+                false
+            }
         }
-
-        Trap::Interrupt(cause) => {
-            println!("interrupt:{cause:?}");
-        }
-        Trap::Exception(cause) => {
-            println!("exception:{cause:?}");
-        }
-    }
-    need_reschedule
+    } else { false }
 }

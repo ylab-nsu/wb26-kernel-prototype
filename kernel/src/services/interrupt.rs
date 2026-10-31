@@ -114,7 +114,8 @@ impl InterruptService {
     }
 }
 
-enum InterruptServiceRegistrationError {
+#[derive(Debug)]
+pub enum InterruptServiceRegistrationError {
     AlreadyInited,
     AnotherKernelTrapHandlerAlreadySet,
 }
