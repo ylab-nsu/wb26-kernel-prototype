@@ -1,5 +1,9 @@
-use crate::arch::traits::TargetTrapFrame;
-use crate::syscall::handle_syscall;
+use crate::{
+    arch::traits::{TargetTrapFrame, TargetInterruptController},
+    threading::trap::{TrapCause, TrapHandlerRegistrationError},
+    syscall::handle_syscall,
+};
+use once_cell_no_std::OnceCell;
 use riscv::interrupt::{Exception, Interrupt, Trap};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec::Stvec;
@@ -54,6 +58,16 @@ impl TargetTrapFrame for RiscvTrapFrame {
 
     fn set_arg0(&mut self, value: usize) {
         self.a0 = value;
+    }
+}
+
+static KERNEL_TRAP_HANDLER: OnceCell<fn(TrapCause) -> bool> = OnceCell::new();
+
+pub struct RiscvInterruptController;
+
+impl TargetInterruptController for RiscvInterruptController {
+    fn set_kernel_trap_handler(handler: fn(TrapCause) -> bool) -> Result<(), TrapHandlerRegistrationError> {
+        return KERNEL_TRAP_HANDLER.set(handler).map_err(|_| TrapHandlerRegistrationError::AlreadyOccupied);
     }
 }
 

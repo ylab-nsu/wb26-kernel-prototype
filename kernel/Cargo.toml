@@ -30,6 +30,8 @@ bitfield-struct = "0.13.0"
 bitmap-allocator = "0.4.5"
 sync-unsafe-cell = "0.1.1"
 critical-section = { version = "1.2.0", features = ["restore-state-u8"] }
+once_cell_no_std = "0.2.1"
+atomic_fn = { git = "https://github.com/kupiakos/atomic_fn.git", rev = "75e1860c0515a814bd62609e211022ea5e6e03c7" }
 
 [build-dependencies]
 llvm-tools = "0.1.1"

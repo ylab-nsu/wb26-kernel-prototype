@@ -3,6 +3,11 @@
 version = 4
 
 [[package]]
+name = "atomic_fn"
+version = "0.2.1"
+source = "git+https://github.com/kupiakos/atomic_fn.git?rev=75e1860c0515a814bd62609e211022ea5e6e03c7#75e1860c0515a814bd62609e211022ea5e6e03c7"
+
+[[package]]
 name = "base64"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -105,6 +110,7 @@ dependencies = [
 name = "kernel"
 version = "0.1.0"
 dependencies = [
+ "atomic_fn",
  "bitfield-struct",
  "bitmap-allocator",
  "critical-section",
@@ -112,6 +118,7 @@ dependencies = [
  "fdt",
  "heapless",
  "llvm-tools",
+ "once_cell_no_std",
  "riscv 0.15.0",
  "sbi",
  "spin",
@@ -136,6 +143,12 @@ name = "llvm-tools"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "955be5d0ca0465caf127165acb47964f911e2bc26073e865deb8be7189302faf"
+
+[[package]]
+name = "once_cell_no_std"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88d9de24aa391d97829980d784b3f9459f1774aab47790a469aed9e6b5ffbbb3"
 
 [[package]]
 name = "paste"

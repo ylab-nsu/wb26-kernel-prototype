@@ -4,6 +4,7 @@ use crate::{
     allocator::AllocatorError,
     arch::{Mapping, PhysicalAddress, PhysicalAllocation, VirtualAddress},
     vm::{MappingFlags, MappingPermissions},
+    threading::trap::{ TrapHandlerRegistrationError, TrapCause },
 };
 
 pub trait TargetPlatform {
@@ -108,4 +109,8 @@ pub trait TargetTrapFrame: Default + Clone {
 pub trait TargetContext: Default + Clone {
     fn with_ra(self, ra: usize) -> Self;
     fn with_sp(self, sp: usize) -> Self;
+}
+
+pub trait TargetInterruptController {
+    fn set_kernel_trap_handler(handler: fn(TrapCause) -> bool) -> Result<(), TrapHandlerRegistrationError>;
 }
