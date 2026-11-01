@@ -1,5 +1,7 @@
 use crate::arch::riscv::memory::layout::KERNEL_LAYOUT;
 use crate::arch::traits::TargetPlatform;
+use crate::threading::thread::{CurrentThread, ThreadRawRunning};
+use core::arch::asm;
 
 pub struct RiscvPlatform;
 
@@ -56,5 +58,18 @@ impl TargetPlatform for RiscvPlatform {
 
     fn get_user_va_offset() -> usize {
         unsafe { KERNEL_LAYOUT.user_va_offset }
+    }
+
+    #[inline]
+    fn get_current_thread_raw() -> ThreadRawRunning {
+        let ptr: *mut CurrentThread;
+        unsafe { asm!("mv {}, tp", out(reg) ptr, options(pure, nomem, nostack)) };
+        unsafe { ThreadRawRunning::from_ptr(ptr) }
+    }
+
+    #[inline]
+    unsafe fn set_current_thread_raw(raw: &ThreadRawRunning) {
+        let ptr = raw.as_ptr();
+        unsafe { asm!("mv tp, {}", in(reg) ptr, options(nomem, nostack)) };
     }
 }

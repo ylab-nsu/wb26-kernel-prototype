@@ -17,7 +17,7 @@ const NO_OWNER: usize = usize::MAX;
 static OWNER: AtomicUsize = AtomicUsize::new(NO_OWNER);
 
 #[inline]
-fn hart_id() -> usize {
+pub fn current_core_id() -> usize {
     0 // For now OS only supports single CPU core
 }
 
@@ -26,7 +26,7 @@ unsafe impl critical_section::Impl for CriticalSection {
         let was_enabled = Platform::interrupts_enabled();
         unsafe { Platform::disable_interrupts() };
 
-        let me = hart_id();
+        let me = current_core_id();
         if OWNER.load(Ordering::Relaxed) == me {
             return was_enabled as u8;
         }

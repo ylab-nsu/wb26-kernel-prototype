@@ -1,10 +1,10 @@
-use alloc::sync::Arc;
-
+use crate::threading::thread::ThreadRawRunning;
 use crate::{
     allocator::AllocatorError,
     arch::{Mapping, PhysicalAddress, PhysicalAllocation, VirtualAddress},
     vm::{MappingFlags, MappingPermissions},
 };
+use alloc::sync::Arc;
 
 pub trait TargetPlatform {
     fn init();
@@ -27,6 +27,9 @@ pub trait TargetPlatform {
 
     // todo: remove after switching to a sane memory manager
     fn get_user_va_offset() -> usize;
+
+    fn get_current_thread_raw() -> ThreadRawRunning;
+    unsafe fn set_current_thread_raw(ptr: &ThreadRawRunning);
 }
 
 pub trait TargetAddressSpace {
@@ -101,6 +104,7 @@ pub trait TargetTrapFrame: Default + Clone {
     fn with_pc(self, pc: usize) -> Self;
     fn with_sp(self, sp: usize) -> Self;
     fn with_arg0(self, arg0: usize) -> Self;
+    fn with_usermode(self, is_usermode: bool) -> Self;
 
     // todo another interface
     fn set_pc(&mut self, value: usize);
@@ -119,6 +123,4 @@ pub trait TargetContext: Clone {
     /// right after the Rust code executed and returned into assembly
     /// (_initial_return_trap).
     unsafe fn new(initial_pc: usize, initial_sp: usize) -> Self;
-    /// Get data pointer to give to assembly code that stores and reads registers.
-    fn get_ptr(&mut self) -> *mut core::ffi::c_void;
 }

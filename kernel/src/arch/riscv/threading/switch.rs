@@ -34,8 +34,4 @@ impl TargetContext for RiscvContext {
         }
         context
     }
-
-    fn get_ptr(&mut self) -> *mut core::ffi::c_void {
-        self.0.as_mut_ptr() as *mut core::ffi::c_void
-    }
 }

@@ -26,6 +26,7 @@ pub fn init_page_table_pool() {
     unsafe { PAGE_TABLE_POOL.set_pool_phys_address(page_table_pool_phys_addr) };
 }
 
+#[derive(Debug)]
 pub struct Sv39AddressSpace {
     root_page_table: PageTableRef<Sv39PageTable>,
     mappings: Mutex<Vec<Sv39Mapping>>,
@@ -129,7 +130,7 @@ impl TargetAddressSpace for Sv39AddressSpace {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Sv39Mapping {
     virt_addr: VirtualAddress,
     phys_alloc: Arc<PhysicalAllocation>,

@@ -137,6 +137,7 @@ impl<P: TargetPageTable> PageTablePool<P> {
     }
 }
 
+#[derive(Debug)]
 pub struct PageTableRef<P: TargetPageTable> {
     pool: NonNull<PageTablePool<P>>,
     index: usize,
