@@ -92,14 +92,6 @@ USER_LMA = 0x85000000;
 USER_VMA = 0x45000000;
 USER_VA_OFFSET = USER_VMA - USER_LMA;
 
-MEMORY
-{
-    TRAMPOLINE_REGION : ORIGIN = TRAMPOLINE_LMA, LENGTH = 16M
-    KERNEL_REGION : ORIGIN = KERNEL_VMA, LENGTH = 32M
-    USER_REGION   : ORIGIN = USER_VMA, LENGTH = 48M
-}
-
-
 PAGE_SIZE = 4096;
 
 USER_HEAP_PAGES = 1;
@@ -108,20 +100,22 @@ USER_STACK_PAGES = 128;
 SECTIONS
 {
 
+  . = TRAMPOLINE_LMA;
+
   .trampoline ALIGN(PAGE_SIZE) :
   {
     KEEP(*(.trampoline.text));
 
     . = ALIGN(PAGE_SIZE);
     KEEP(*(.trampoline.root_table));
-  } > TRAMPOLINE_REGION
+  }
 
   __kernel_va_offset = KERNEL_VA_OFFSET;
   __user_va_offset = USER_VA_OFFSET;
 
 
 
-
+  . = USER_VMA;
 
   .user.text ALIGN(PAGE_SIZE) : AT(ADDR(.user.text) - USER_VA_OFFSET)
   {
@@ -131,7 +125,7 @@ SECTIONS
 
     . = ALIGN(4);
     __eutext = .;
-  } > USER_REGION
+  }
 
   .user.rodata ALIGN(PAGE_SIZE) : AT(ADDR(.user.rodata) - USER_VA_OFFSET)
   {
@@ -149,7 +143,7 @@ SECTIONS
        section will have the correct alignment. */
     . = ALIGN(8);
     __eurodata = .;
-  } > USER_REGION
+  }
 
   .user.data ALIGN(PAGE_SIZE) : AT(ADDR(.user.data) - USER_VA_OFFSET)
   {
@@ -163,7 +157,7 @@ SECTIONS
 
     . = ALIGN(8);
     __eudata = .;
-  } > USER_REGION
+  }
 
 
   /* LMA of .data */
@@ -176,7 +170,7 @@ SECTIONS
 
     *libuser_programs.a:(/* .sbss .sbss.* */ .bss .bss.*);
     __eubss = .;
-  } > USER_REGION
+  }
 
   /* Uninitialized data segment. In contrast with .bss, .uninit is not initialized to zero by
    * the runtime, and might contain residual data from previous executions or random values
@@ -189,7 +183,7 @@ SECTIONS
     *libuser_programs.a:(.uninit);
     . = ALIGN(8);
     __euuninit = .;
-  } > USER_REGION
+  }
 
   /* fictitious region that represents the memory available for the heap */
   .user.heap ALIGN(PAGE_SIZE) (NOLOAD) : AT(ADDR(.user.heap) - USER_VA_OFFSET)
@@ -199,7 +193,7 @@ SECTIONS
     . += PAGE_SIZE * USER_HEAP_PAGES;
     . = ALIGN(4);
     __euheap = .;
-  } > USER_REGION
+  }
 
   /* fictitious region that represents the memory available for the stack */
   .user.stack ALIGN(PAGE_SIZE) (NOLOAD) : AT(ADDR(.user.stack) - USER_VA_OFFSET)
@@ -211,13 +205,13 @@ SECTIONS
     . += PAGE_SIZE * USER_STACK_PAGES;
     /* . = ABSOLUTE(_stack_start); */
     __sustack = .;
-  } > USER_REGION
+  }
 
 
 
 
 
-
+  . = KERNEL_VMA;
 
   .text ALIGN(PAGE_SIZE) : AT(ADDR(.text) - KERNEL_VA_OFFSET)
   {
@@ -242,7 +236,7 @@ SECTIONS
 
     . = ALIGN(4);
     __etext = .;
-  } > KERNEL_REGION
+  }
 
   .rodata ALIGN(PAGE_SIZE) : AT(ADDR(.rodata) - KERNEL_VA_OFFSET)
   {
@@ -260,7 +254,7 @@ SECTIONS
        section will have the correct alignment. */
     . = ALIGN(8);
     __erodata = .;
-  } > KERNEL_REGION
+  }
 
   .data ALIGN(PAGE_SIZE) : AT(ADDR(.data) - KERNEL_VA_OFFSET)
   {
@@ -274,7 +268,7 @@ SECTIONS
 
     . = ALIGN(8);
     __edata = .;
-  } > KERNEL_REGION
+  }
 
 
   /* LMA of .data */
@@ -287,7 +281,7 @@ SECTIONS
 
     *(EXCLUDE_FILE(*libuser_programs.a) /* .sbss .sbss.* */ .bss .bss.*);
     __ebss = .;
-  } > KERNEL_REGION
+  }
 
   /* Uninitialized data segment. In contrast with .bss, .uninit is not initialized to zero by
    * the runtime, and might contain residual data from previous executions or random values
@@ -300,7 +294,7 @@ SECTIONS
     *(EXCLUDE_FILE(*libuser_programs.a) .uninit);
     . = ALIGN(8);
     __euninit = .;
-  } > KERNEL_REGION
+  }
 
   /* fictitious region that represents the memory available for the heap */
   .heap ALIGN(PAGE_SIZE) (NOLOAD) : AT(ADDR(.heap) - KERNEL_VA_OFFSET)
@@ -309,7 +303,7 @@ SECTIONS
     KEEP(*(.heap));
     . = ALIGN(8);
     __eheap = .;
-  } > KERNEL_REGION
+  }
 
   /* fictitious region that represents the memory available for page table pool */
   .page_table_pool ALIGN(PAGE_SIZE) : AT(ADDR(.page_table_pool) - KERNEL_VA_OFFSET)
@@ -317,10 +311,13 @@ SECTIONS
     __spage_table_pool = .;
     KEEP(*(.page_table_pool));
     __epage_table_pool = .;
+    __s_temp_mmu_table = .;
+    . += PAGE_SIZE * 32;
+    __e_temp_mmu_table = .;
     __s_temp_kernel_stacks = .;
     . += PAGE_SIZE * 512;
     __e_temp_kernel_stacks = .;
-  } > KERNEL_REGION
+  }
 
   /* fictitious region that represents the memory available for the stack */
   .stack ALIGN(PAGE_SIZE) (NOLOAD) : AT(ADDR(.stack) - KERNEL_VA_OFFSET)
@@ -333,7 +330,7 @@ SECTIONS
     KEEP(*(.stack));
     . = ALIGN(16);
     __sstack = .;
-  } > KERNEL_REGION
+  }
 
 
 
@@ -353,7 +350,7 @@ SECTIONS
   .got (INFO) :
   {
     KEEP(*(.got .got.*));
-  } > KERNEL_REGION
+  }
 }
 
 /* Do not exceed this mark in the error messages above                                    | */
