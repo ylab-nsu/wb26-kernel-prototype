@@ -39,6 +39,7 @@ pub struct RiscvTrapFrame {
     t4: usize,
     t5: usize,
     t6: usize,
+    sstatus: usize,
 }
 
 impl TargetTrapFrame for RiscvTrapFrame {
@@ -54,6 +55,13 @@ impl TargetTrapFrame for RiscvTrapFrame {
 
     fn with_arg0(mut self, arg0: usize) -> Self {
         self.a0 = arg0;
+        self
+    }
+
+    fn with_usermode(mut self, is_usermode: bool) -> Self {
+        const SSTATUS_SPP: usize = 0x100;
+        self.sstatus &= !SSTATUS_SPP;
+        self.sstatus |= if is_usermode { SSTATUS_SPP } else { 0 };
         self
     }
 

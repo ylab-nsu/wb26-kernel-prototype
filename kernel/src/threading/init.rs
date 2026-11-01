@@ -5,7 +5,9 @@ use crate::arch::{
     KERNEL_LAYOUT,
 };
 use crate::drivers::driver_task;
-use crate::threading::thread::{create_invalid_thread, spawn_kernel, spawn_user, THREADS_INDEXES};
+use crate::threading::thread::{
+    create_initial_invalid_thread, spawn_kernel, spawn_user, THREADS_INDEXES,
+};
 use crate::vm::{MappingFlags, MappingPermissions};
 use alloc::sync::Arc;
 use core::arch::global_asm;
@@ -58,7 +60,7 @@ pub fn setup_threads(kernel_address_space: Arc<AddressSpace>) {
     println!();
     println!();
 
-    create_invalid_thread();
+    unsafe { create_initial_invalid_thread() };
 
     let driver_task_id = spawn_kernel(driver_task, kernel_address_space);
     unsafe {

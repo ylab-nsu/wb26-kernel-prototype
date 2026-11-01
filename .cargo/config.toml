@@ -1,5 +1,7 @@
 [build]
 target = "riscv64gc-unknown-none-elf"
+rustflags = ["-C", "link-arg=--no-relax-gp"]
+# maybe we should add "-C", "target-feature=+relax",
 
 [target.riscv64gc-unknown-none-elf]
 runner = "make run"

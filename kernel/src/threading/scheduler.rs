@@ -1,26 +1,11 @@
-use crate::arch::traits::{TargetAddressSpace, TargetContext};
 use crate::drivers::TEST_DRIVER_ANY;
-use crate::threading::thread::{
-    get_current_thread_id, get_thread, get_threads_count, set_current_thread_id, THREADS_INDEXES,
-};
-
-unsafe fn switch_thread(
-    curr_context: &mut impl TargetContext,
-    next_context: &mut impl TargetContext,
-) {
-    extern "C" {
-        fn _switch_thread(
-            curr_context: *mut core::ffi::c_void,
-            next_context: *mut core::ffi::c_void,
-        ) -> usize;
-    }
-    unsafe { _switch_thread(curr_context.get_ptr(), next_context.get_ptr()) };
-}
+use crate::threading::switch::switch_to;
+use crate::threading::thread::{get_thread, get_threads_count, THREADS_INDEXES};
 
 static mut LAST_USER: usize = unsafe { THREADS_INDEXES.user_start - 1 };
 
 #[export_name = "_reschedule_rust"]
-pub fn reschedule() {
+pub extern "C" fn reschedule() {
     let time = riscv::register::time::read64();
     sbi::timer::set_timer(time + 10_000_000).expect("Can't set timer");
     // sbi::timer::set_timer(time + 1_000).expect("Can't set timer");
@@ -45,30 +30,10 @@ pub fn reschedule() {
         }
     };
 
-    let (curr, next) = unsafe {
-        let curr = get_thread(get_current_thread_id());
-        let next = get_thread(next_thread);
-
-        // println!("CURRENT_THREAD: {CURRENT_THREAD}");
-
-        (curr, next)
-    };
-
-    info!("Switching threads from {} to {}", curr.id, next.id);
+    let next = unsafe { get_thread(next_thread) };
+    let next = next.try_claim().unwrap(); // No multithreading yet, can unwrap
 
     unsafe {
-        set_current_thread_id(next_thread);
-        if next.is_kernel {
-            riscv::register::sstatus::set_spp(riscv::register::sstatus::SPP::Supervisor);
-        } else {
-            // Setting SPP here will work only without nested interrupts
-            riscv::register::sstatus::set_spp(riscv::register::sstatus::SPP::User);
-        }
-        next.address_space
-            .as_ref()
-            .expect("Trying to switch to thread without address space")
-            .switch();
-    };
-
-    unsafe { switch_thread(&mut *curr.context.get(), &mut *next.context.get()) };
+        switch_to(next, true);
+    }
 }
