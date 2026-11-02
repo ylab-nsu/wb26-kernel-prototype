@@ -122,7 +122,7 @@ pub enum InterruptServiceInitializationError {
 
 static INTERRUPT_SERVICE: OnceCell<InterruptService> = OnceCell::new();
 
-pub fn kernel_trap_handler(trap: TrapCause) -> bool {
+fn kernel_trap_handler(trap: TrapCause) -> bool {
     INTERRUPT_SERVICE.get().map_or(false, |service| service.handle_trap(trap))
 }
 
