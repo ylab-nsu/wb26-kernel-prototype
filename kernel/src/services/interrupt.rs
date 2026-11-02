@@ -115,7 +115,7 @@ impl InterruptService {
 }
 
 #[derive(Debug)]
-pub enum InterruptServiceRegistrationError {
+pub enum InterruptServiceInitializationError {
     AlreadyInited,
     AnotherKernelTrapHandlerAlreadySet,
 }
@@ -126,10 +126,10 @@ pub fn kernel_trap_handler(trap: TrapCause) -> bool {
     INTERRUPT_SERVICE.get().map_or(false, |service| service.handle_trap(trap))
 }
 
-pub fn init() -> Result<&'static InterruptService, InterruptServiceRegistrationError> {
-    INTERRUPT_SERVICE.set(InterruptService::new()).map_err(|_| InterruptServiceRegistrationError::AlreadyInited)?;
+pub fn init() -> Result<&'static InterruptService, InterruptServiceInitializationError> {
+    INTERRUPT_SERVICE.set(InterruptService::new()).map_err(|_| InterruptServiceInitializationError::AlreadyInited)?;
 
-    InterruptController::set_kernel_trap_handler(kernel_trap_handler).map_err(|_| InterruptServiceRegistrationError::AnotherKernelTrapHandlerAlreadySet)?;
+    InterruptController::set_kernel_trap_handler(kernel_trap_handler).map_err(|_| InterruptServiceInitializationError::AnotherKernelTrapHandlerAlreadySet)?;
 
     // SAFETY: If first statement returned Ok - the cell must be non-empty
     Ok(INTERRUPT_SERVICE.get().unwrap())
