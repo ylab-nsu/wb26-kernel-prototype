@@ -27,10 +27,8 @@ use crate::threading::init::setup_threads;
 use crate::time::Duration;
 use crate::timer_queue::{ScheduleKind, TimerCallback};
 
-pub static TIMER_QUEUE: timer_queue::TimerQueue = timer_queue::TimerQueue::new(arch::time::Alarm::get());
-
 fn setup_reschedule_timer() {
-    TIMER_QUEUE.register(TimerCallback::Reschedule, Duration::MIN, ScheduleKind::Repeating(Duration::from_secs(1)));
+    timer_queue::TimerQueue::get().register(TimerCallback::Reschedule, Duration::MIN, ScheduleKind::Repeating(Duration::from_secs(1)));
 }
 
 pub fn kernel_main(ctx: BootContext) -> ! {

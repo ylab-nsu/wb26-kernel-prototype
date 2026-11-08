@@ -47,6 +47,11 @@ unsafe impl Send for TimerQueue {}
 unsafe impl Sync for TimerQueue {}
 
 impl TimerQueue {
+    pub const fn get() -> &'static Self {
+        static INSTANCE: TimerQueue = TimerQueue::new(Alarm::get());
+        &INSTANCE
+    }
+
     pub const fn new(alarm: &'static Alarm) -> Self {
         Self {
             inner: InterruptMutex::new(TimerQueueInner {
