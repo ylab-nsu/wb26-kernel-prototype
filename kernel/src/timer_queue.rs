@@ -73,6 +73,16 @@ impl TimerQueue {
             schedule_kind,
             cancel_flag: cancel_flag.clone(),
         });
+        let next_ticks = inner
+            .queue
+            .peek()
+            .expect("Should have had at least one timer in queue")
+            .target_time
+            .as_ticks();
+        inner
+            .alarm
+            .schedule(next_ticks)
+            .expect("Could not schedule an alarm");
         CancelHandle {
             cancel_flag: Arc::downgrade(&cancel_flag),
         }
