@@ -14,6 +14,8 @@ pub mod drivers;
 pub mod sync;
 mod syscall;
 pub mod threading;
+pub mod time;
+pub mod timer_queue;
 pub mod vm;
 
 use alloc::sync::Arc;
@@ -22,6 +24,12 @@ use core::panic::PanicInfo;
 use crate::arch::{traits::TargetPlatform, Platform};
 use crate::boot::BootContext;
 use crate::threading::init::setup_threads;
+use crate::time::Duration;
+use crate::timer_queue::{ScheduleKind, TimerCallback};
+
+fn setup_reschedule_timer() {
+    timer_queue::TimerQueue::get().register(TimerCallback::Reschedule, Duration::MIN, ScheduleKind::Repeating(Duration::from_secs(1)));
+}
 
 pub fn kernel_main(ctx: BootContext) -> ! {
     info!("Starting kernel (kernel_main())");
@@ -30,6 +38,8 @@ pub fn kernel_main(ctx: BootContext) -> ! {
     let kernel_address_space = Arc::new(address_space);
 
     setup_threads(kernel_address_space);
+    setup_reschedule_timer();
+
     unsafe {
         Platform::enable_interrupts();
     }

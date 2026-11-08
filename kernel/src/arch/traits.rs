@@ -109,3 +109,35 @@ pub trait TargetContext: Default + Clone {
     fn with_ra(self, ra: usize) -> Self;
     fn with_sp(self, sp: usize) -> Self;
 }
+
+pub trait TargetTimer {
+    type Ticks;
+
+    fn now(&self) -> Self::Ticks;
+}
+
+pub trait TargetTimeConverter {
+    type Ticks: Sized;
+    type Temporal: Sized;
+
+    fn try_from_nanos(&self, nanos: Self::Temporal) -> Option<Self::Ticks>;
+    fn try_from_micros(&self, micros: Self::Temporal) -> Option<Self::Ticks>;
+    fn try_from_millis(&self, millis: Self::Temporal) -> Option<Self::Ticks>;
+    fn try_from_secs(&self, secs: Self::Temporal) -> Option<Self::Ticks>;
+
+    fn try_from_nanos_floor(&self, nanos: Self::Temporal) -> Option<Self::Ticks>;
+    fn try_from_micros_floor(&self, micros: Self::Temporal) -> Option<Self::Ticks>;
+    fn try_from_millis_floor(&self, millis: Self::Temporal) -> Option<Self::Ticks>;
+    fn try_from_secs_floor(&self, secs: Self::Temporal) -> Option<Self::Ticks>;
+
+    fn to_nanos(&self, ticks: Self::Ticks) -> Self::Temporal;
+    fn to_micros(&self, ticks: Self::Ticks) -> Self::Temporal;
+    fn to_millis(&self, ticks: Self::Ticks) -> Self::Temporal;
+    fn to_secs(&self, ticks: Self::Ticks) -> Self::Temporal;
+}
+
+pub trait TargetAlarm {
+    type Ticks;
+
+    fn schedule(&self, ticks: Self::Ticks) -> Result<(), ()>;
+}
