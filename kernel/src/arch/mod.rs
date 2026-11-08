@@ -33,7 +33,7 @@ cfg_select! {
             pub type PlatformTicks = super::riscv::time::Ticks;
             pub type PlatformTemporal = super::riscv::time::Temporal;
             pub type Timer = super::riscv::time::Timer;
-            pub type TimeConverter = super::riscv::time::Timer;
+            pub type TimeConverter = super::riscv::time::TimeConverter;
             pub type Alarm = super::riscv::time::Alarm;
         }
     }
