@@ -19,6 +19,7 @@ impl Future for SleepFuture {
         if current_time > self.target_time {
             Poll::Ready(())
         } else {
+            cx.waker().wake_by_ref();
             Poll::Pending
         }
     }

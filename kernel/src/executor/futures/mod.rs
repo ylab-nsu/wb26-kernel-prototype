@@ -1,2 +1,4 @@
-pub mod sleep;
-pub mod oneshot;
+mod oneshot;
+mod sleep;
+
+pub use {oneshot::yield_now, sleep::sleep};
