@@ -12,6 +12,7 @@ impl Future for OneshotFuture {
             Poll::Ready(())
         } else {
             self.get_mut().complete = true;
+            cx.waker().wake_by_ref();
             Poll::Pending
         }
     }

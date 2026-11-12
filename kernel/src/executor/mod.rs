@@ -1,10 +1,54 @@
-use core::{future::Future, pin::Pin, task::{Context, Poll, RawWaker, RawWakerVTable, Waker}};
+use core::future::Future;
 
-use alloc::{boxed::Box, collections::VecDeque};
+use alloc::sync::Arc;
+use crossbeam_queue::SegQueue;
 
-use crate::{executor::futures::{oneshot::yield_now, sleep::sleep}, sync::Mutex};
+use crate::executor::{futures::{yield_now, sleep}, task::Task};
 
 pub mod futures;
+
+mod task;
+
+pub struct Executor {
+    task_queue: SegQueue<Arc<Task>>,
+}
+
+impl Executor {
+    pub fn get() -> &'static Executor {
+        static EXECUTOR: Executor = Executor::new();
+
+        &EXECUTOR
+    }
+}
+
+impl Executor {
+    pub const fn new() -> Self {
+        Self {
+            task_queue: SegQueue::new(),
+        }
+    }
+
+    pub fn spawn<F>(&self, future: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let task = Arc::new(Task::new(future));
+        self.schedule_task(task);
+    }
+
+    fn schedule_task(&self, task: Arc<Task>) {
+        self.task_queue.push(task);
+    }
+
+    fn worker(queue: &'static SegQueue<Arc<Task>>) {
+        loop {
+            match queue.pop() {
+                Some(task) => task.poll(),
+                None => continue,
+            }
+        }
+    }
+}
 
 async fn compound() {
     debug!("Start compound");
@@ -26,36 +70,10 @@ async fn test() {
     debug!("Finish");
 }
 
-// fn no_op(_: *const ()) {}
-// fn no_op_clone(_: *const ()) -> RawWaker {
-//     noop_raw_waker()
-// }
-
-// static RWVT: RawWakerVTable = RawWakerVTable::new(no_op_clone, no_op, no_op, no_op);
-
-// #[inline]
-// fn noop_raw_waker() -> RawWaker {
-//     RawWaker::new(core::ptr::null(), &RWVT)
-// }
-
-struct Task {
-    future: Pin<Box<dyn Future<Output = ()> + Send>>,
-}
-
-static TASKS: Mutex<VecDeque<Task>> = Mutex::new(VecDeque::new());
-
-pub fn spawn(future: impl Future<Output = ()> + Send + 'static) {
-    let mut tasks = TASKS.lock();
-
-    tasks.push_front(Task {
-        future: Box::pin(future),
-    });
-}
-
 pub extern "C" fn executor() -> ! {
-    spawn(test());
+    Executor::get().spawn(test());
 
-    spawn(async {
+    Executor::get().spawn(async {
         debug!("Start2");
         sleep(500_000).await;
         debug!("One2");
@@ -65,53 +83,7 @@ pub extern "C" fn executor() -> ! {
         debug!("Finish2");
     });
 
-    loop {
-        // heapless::
-        let mut tasks = TASKS.lock();
+    Executor::worker(&Executor::get().task_queue);
 
-        let waker = Waker::noop();
-        let mut cx = Context::from_waker(waker);
-
-        if let Some(mut task) = tasks.pop_back() {
-            match task.future.as_mut().poll(&mut cx) {
-                Poll::Ready(_) => {
-                    debug!("Ready");
-                    // break;
-                }
-                Poll::Pending => {
-                    // debug!("Not ready");
-                    tasks.push_front(task);
-                }
-            }
-        } else {
-            debug!("Finish exec");
-            break;
-        }
-    }
-
-    loop {
-
-    }
+    loop {}
 }
-
-// pub fn executor() {
-//     let future = test();
-
-//     let waker = Waker::noop();
-//     // let waker = unsafe { Waker::from_raw(noop_raw_waker()) };
-//     let mut ctx = Context::from_waker(waker);
-//     let mut pinned_future = pin!(future);
-//     let mut pinned_future = Box::pin(future);
-
-//     loop {
-//         match pinned_future.as_mut().poll(&mut ctx) {
-//             Poll::Ready(_) => {
-//                 debug!("Ready");
-//                 break;
-//             }
-//             Poll::Pending => {
-//                 // debug!("Not ready");
-//             }
-//         }
-//     }
-// }
