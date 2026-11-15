@@ -6,9 +6,12 @@ use alloc::vec::Vec;
 use core::cell::{Cell, UnsafeCell};
 use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
+use core::num::NonZeroUsize;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use derive_setters::Setters;
+use pinned_init::{cast_init, init, InPlaceInit, Init};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -23,6 +26,112 @@ extern "C" {
     fn _initial_return_trap() -> !;
 }
 
+#[deny(dead_code)]
+#[derive(Default, Setters)]
+pub struct ThreadBuilder {
+    #[setters(strip_option)]
+    initial_pc: Option<NonZeroUsize>,
+    #[setters(strip_option)]
+    initial_user_sp: Option<NonZeroUsize>,
+    initial_arg0: usize,
+    initial_arg1: usize,
+    initial_arg2: usize,
+    initial_arg3: usize,
+    #[setters(strip_option)]
+    kernel_stack: Option<NonNull<u8>>,
+    #[setters(strip_option)]
+    id: Option<usize>,
+    #[setters(strip_option)]
+    address_space: Option<Arc<AddressSpace>>,
+    not_valid: bool,
+    is_user: bool,
+}
+
+pub fn pseudo_allocate_kernel_stack(id: usize) -> NonNull<u8> {
+    // TODO: add a better kernel stack allocator
+    NonNull::from(unsafe { &mut KERNEL_STACKS[(id + 1) * 16] }).cast()
+}
+
+impl ThreadBuilder {
+    pub fn build(self) -> ThreadRef {
+        let ThreadBuilder {
+            initial_pc,
+            initial_user_sp,
+            initial_arg0,
+            initial_arg1,
+            initial_arg2,
+            initial_arg3,
+            kernel_stack,
+            id,
+            address_space,
+            not_valid,
+            is_user,
+        } = self;
+
+        let id = id.expect("id must be set for a thread");
+        let kernel_stack = kernel_stack
+            .expect("kernel_stack must be set for a thread")
+            .as_ptr();
+        // TODO: make sure stack pointer is aligned by 16 bytes for riscv
+
+        let trap_alignment: usize = align_of::<TrapFrame>();
+        let trap_frame = kernel_stack.wrapping_byte_sub(size_of::<TrapFrame>());
+        let offset = trap_frame.align_offset(trap_alignment);
+        let trap_frame = trap_frame.wrapping_byte_sub((trap_alignment - offset) % trap_alignment);
+        let trap_frame = trap_frame as *mut TrapFrame;
+
+        debug_assert!(!trap_frame.is_null());
+        debug_assert!(trap_frame.is_aligned());
+
+        let initial_user_sp: usize = match (initial_user_sp, is_user) {
+            (Some(user_sp), true) => user_sp.get(),
+            (Some(_), false) => panic!("user_sp must not be set for a kernel thread"),
+            (None, true) => panic!("user_sp must be set for a user thread"),
+            (None, false) => 0,
+        };
+
+        unsafe {
+            trap_frame.write(
+                TrapFrame::default()
+                    .with_pc(usize::from(
+                        initial_pc.expect("initial_pc must be set for a thread"),
+                    ))
+                    .with_sp(initial_user_sp)
+                    .with_arg0(initial_arg0)
+                    .with_arg1(initial_arg1)
+                    .with_arg2(initial_arg2)
+                    .with_arg3(initial_arg3)
+                    .with_usermode(is_user),
+            );
+        }
+
+        let address_space = match (address_space, not_valid) {
+            (Some(t), _) => Some(t),
+            (None, false) => {
+                let t = Arc::new(AddressSpace::new());
+
+                Some(t)
+            }
+            (None, true) => None,
+        };
+
+        ThreadRef(
+            Arc::init(init!(Thread {
+                id,
+                context <- unsafe_cell_init(
+                    Context::init(_initial_return_trap as *const () as usize, trap_frame.addr())
+                ),
+                address_space: address_space,
+                valid: !not_valid,
+                is_user,
+                claimed_lock: AtomicUsize::new(usize::MAX),
+                used_lock: AtomicBool::new(false),
+            }))
+            .expect("out of memory while creating a thread"), // Will not work on stable Rust
+        )
+    }
+}
+
 const _: () = assert!(
     core::mem::offset_of!(Thread, context) == 0,
     "If this assert fails, you can just put `#[repr(C)]` on struct Thread. \
@@ -35,79 +144,12 @@ pub struct Thread {
     pub id: usize,
     pub address_space: Option<Arc<AddressSpace>>,
     pub valid: bool,
-    pub is_kernel: bool,
+    pub is_user: bool,
     claimed_lock: AtomicUsize,
     used_lock: AtomicBool,
 }
 
-// struct PreStart<'a, T: TargetTrapFrame> {
-//     frame: &'a mut T,
-// }
-
-// struct PreStart<'a, T: TargetTrapFrame>(&'a mut T);
-//
-// impl<T: TargetTrapFrame> PreStart<'_, T> {
-//     fn set_pc(&mut self, v: usize) {
-//         self.0.set_pc(v);
-//     }
-//     fn set_sp(&mut self, v: usize) {
-//         self.0.set_sp(v);
-//     }
-//     fn set_arg0(&mut self, v: usize) {
-//         self.0.set_arg0(v);
-//     }
-// }
-
 impl Thread {
-    unsafe fn new(
-        id: usize,
-        is_user: bool,
-        address_space: Arc<AddressSpace>,
-        initial_pc: usize,
-        initial_user_sp: usize,
-        arg0: usize,
-        // frame_init: F,
-    ) -> ThreadRefSetup
-// where
-    //     F: FnOnce(PreStart<'_, TrapFrame>),
-    {
-        let _left = unsafe { &mut KERNEL_STACKS[id * 16] as *mut Page as usize };
-        let right = unsafe { &mut KERNEL_STACKS[(id + 1) * 16] as *mut Page as usize };
-
-        let trap_frame_addr =
-            (right - size_of::<TrapFrame>()) / align_of::<TrapFrame>() * align_of::<TrapFrame>();
-        debug_assert!(trap_frame_addr != 0);
-        debug_assert!(trap_frame_addr % align_of::<TrapFrame>() == 0);
-        let trap_frame = trap_frame_addr as *mut TrapFrame;
-        unsafe {
-            trap_frame.write(
-                TrapFrame::default()
-                    .with_pc(initial_pc)
-                    .with_sp(initial_user_sp)
-                    .with_arg0(arg0)
-                    .with_usermode(!is_user),
-            );
-            // frame_init(PreStart(&mut *trap_frame));
-        }
-
-        let ret = ThreadRefSetup(
-            Arc::new(Thread {
-                id,
-                context: UnsafeCell::new(unsafe {
-                    Context::new(_initial_return_trap as *const () as usize, trap_frame_addr)
-                }),
-                address_space: Some(address_space),
-                valid: true,
-                is_kernel: is_user,
-                claimed_lock: AtomicUsize::new(usize::MAX),
-                used_lock: AtomicBool::new(false),
-            }),
-            PhantomData,
-        );
-
-        ret
-    }
-
     pub fn terminate(&mut self) {
         self.valid = false;
         self.address_space.take();
@@ -167,7 +209,7 @@ pub static mut THREADS_INDEXES: ThreadsIndexes = ThreadsIndexes {
 };
 
 pub unsafe fn get_current_thread_id() -> usize {
-    Platform::get_current_thread_raw().as_ref().id
+    unsafe { Platform::get_current_thread_raw().as_ref().id }
 }
 
 pub unsafe fn get_threads_count() -> usize {
@@ -177,42 +219,10 @@ pub unsafe fn get_threads_count() -> usize {
 pub unsafe fn get_thread(id: usize) -> ThreadRef {
     unsafe { THREADS.get_mut(id).unwrap().clone() }
 }
-
-pub unsafe fn create_initial_invalid_thread() -> usize {
-    let id = unsafe {
-        let id = THREADS.len();
-        let mut pr0 = Thread::new(id, false, Arc::new(AddressSpace::new()), 0, 0, 0);
-        pr0.valid = false;
-        THREADS.push(pr0.finish());
-        id
-    };
-    let thread = get_thread(id);
-    let thread = thread.try_claim().unwrap();
-    let thread = thread.run();
-    unsafe { Platform::set_current_thread_raw(&thread.into_raw()) }
-    id
-}
-
-pub fn spawn_user(
-    f: extern "C" fn() -> !,
-    user_sp: usize,
-    address_space: Arc<AddressSpace>,
-    user_main: usize,
-) -> usize {
+// Don't worry, all this THREADS array thing will be removed soon
+pub unsafe fn push_thread(thread: ThreadRef) {
     unsafe {
-        let id = THREADS.len();
-        let thread = Thread::new(id, true, address_space, f as usize, user_sp, user_main);
-        THREADS.push(thread.finish());
-        id
-    }
-}
-
-pub fn spawn_kernel(f: extern "C" fn() -> !, address_space: Arc<AddressSpace>) -> usize {
-    unsafe {
-        let id = THREADS.len();
-        let thread = Thread::new(id, false, address_space, f as usize, 0, 0);
-        THREADS.push(thread.finish());
-        id
+        THREADS.push(thread);
     }
 }
 
@@ -253,14 +263,14 @@ impl DerefMut for ThreadRefSetup {
 pub struct ThreadRef(Arc<Thread>);
 
 impl ThreadRef {
-    pub fn try_claim(self) -> Result<ThreadRefClaimed, ThreadRef> {
+    pub fn try_claim(self) -> Result<ClaimedThreadRef, ThreadRef> {
         match self.0.claimed_lock.compare_exchange(
             usize::MAX,
             current_core_id(),
             Ordering::Acquire,
             Ordering::Relaxed,
         ) {
-            Ok(_) => Ok(ThreadRefClaimed(
+            Ok(_) => Ok(ClaimedThreadRef(
                 unsafe { convert_arc!(self.0) },
                 PhantomData,
             )),
@@ -268,8 +278,8 @@ impl ThreadRef {
         }
     }
 
-    pub fn downgrade(&self) -> ThreadRefWeak {
-        ThreadRefWeak(Arc::downgrade(&self.0))
+    pub fn downgrade(&self) -> ThreadWeak {
+        ThreadWeak(Arc::downgrade(&self.0))
     }
 }
 
@@ -283,9 +293,9 @@ impl Deref for ThreadRef {
 // Clone Sync Send
 #[repr(transparent)]
 #[derive(Clone)]
-pub struct ThreadRefWeak(Weak<Thread>);
+pub struct ThreadWeak(Weak<Thread>);
 
-impl ThreadRefWeak {
+impl ThreadWeak {
     pub fn upgrade(&self) -> Option<ThreadRef> {
         self.0.upgrade().map(ThreadRef)
     }
@@ -294,42 +304,42 @@ impl ThreadRefWeak {
 // !Clone !Sync Send
 #[must_use = ""]
 #[repr(transparent)]
-pub struct ThreadRefClaimed(Arc<CurrentThread>, PhantomData<Cell<()>>);
+pub struct ClaimedThreadRef(Arc<CurrentThread>, PhantomData<Cell<()>>);
 
-impl ThreadRefClaimed {
+impl ClaimedThreadRef {
     pub fn release(self) -> ThreadRef {
         let this = ManuallyDrop::new(self);
         this.0.claimed_lock.store(usize::MAX, Ordering::Release);
         ThreadRef(unsafe { convert_arc!(core::ptr::read(&this.0)) })
     }
 
-    pub fn run(self) -> ThreadRefRunning {
+    pub fn run(self) -> RunningThreadRef {
         while self.used_lock.load(Ordering::Relaxed) {
             core::hint::spin_loop();
         }
         let _ = self.used_lock.load(Ordering::Acquire);
         self.used_lock.store(true, Ordering::Release);
         let this = ManuallyDrop::new(self);
-        ThreadRefRunning(unsafe { core::ptr::read(&this.0) }, PhantomData)
+        RunningThreadRef(unsafe { core::ptr::read(&this.0) }, PhantomData)
     }
 
     pub fn copy_ref(&self) -> ThreadRef {
         ThreadRef(unsafe { convert_arc!(self.0.clone()) })
     }
 
-    pub fn downgrade(&self) -> ThreadRefWeak {
-        ThreadRefWeak(unsafe { convert_weak!(Arc::downgrade(&self.0)) })
+    pub fn downgrade(&self) -> ThreadWeak {
+        ThreadWeak(unsafe { convert_weak!(Arc::downgrade(&self.0)) })
     }
 }
 
-impl Deref for ThreadRefClaimed {
-    type Target = Thread;
-    fn deref(&self) -> &Thread {
+impl Deref for ClaimedThreadRef {
+    type Target = CurrentThread;
+    fn deref(&self) -> &CurrentThread {
         &self.0
     }
 }
 
-impl Drop for ThreadRefClaimed {
+impl Drop for ClaimedThreadRef {
     fn drop(&mut self) {
         /*const*/
         {
@@ -341,9 +351,9 @@ impl Drop for ThreadRefClaimed {
 // Clone !Sync !Send
 #[must_use = ""]
 #[repr(transparent)]
-pub struct ThreadRefRunning(Arc<CurrentThread>, PhantomData<Cell<()>>);
+pub struct RunningThreadRef(Arc<CurrentThread>, PhantomData<Cell<()>>);
 
-impl ThreadRefRunning {
+impl RunningThreadRef {
     pub unsafe fn stop(self) -> ThreadRef {
         (*self.0).claimed_lock.store(usize::MAX, Ordering::Release);
         (*self.0).used_lock.store(false, Ordering::Release);
@@ -355,8 +365,8 @@ impl ThreadRefRunning {
         ThreadRef(unsafe { convert_arc!(self.0.clone()) })
     }
 
-    pub fn downgrade(&self) -> ThreadRefWeak {
-        ThreadRefWeak(unsafe { convert_weak!(Arc::downgrade(&self.0)) })
+    pub fn downgrade(&self) -> ThreadWeak {
+        ThreadWeak(unsafe { convert_weak!(Arc::downgrade(&self.0)) })
     }
 
     pub fn into_raw(self) -> ThreadRawRunning {
@@ -366,14 +376,14 @@ impl ThreadRefRunning {
     }
 }
 
-impl Deref for ThreadRefRunning {
-    type Target = Thread;
-    fn deref(&self) -> &Thread {
+impl Deref for RunningThreadRef {
+    type Target = CurrentThread;
+    fn deref(&self) -> &CurrentThread {
         &self.0
     }
 }
 
-impl Drop for ThreadRefRunning {
+impl Drop for RunningThreadRef {
     fn drop(&mut self) {
         /*const*/
         {
@@ -383,7 +393,7 @@ impl Drop for ThreadRefRunning {
 }
 
 pub fn with_current<R>(f: impl FnOnce(&CurrentThread) -> R) -> R {
-    let raw = Platform::get_current_thread_raw();
+    let raw = unsafe { Platform::get_current_thread_raw() };
     let thread: &CurrentThread = raw.as_ref();
     f(thread)
 }
@@ -394,8 +404,8 @@ pub fn with_current<R>(f: impl FnOnce(&CurrentThread) -> R) -> R {
 pub struct ThreadRawRunning(NonNull<CurrentThread>);
 
 impl ThreadRawRunning {
-    pub fn into_ref(self) -> ThreadRefRunning {
-        ThreadRefRunning(unsafe { Arc::from_raw(self.0.as_ptr()) }, PhantomData)
+    pub fn into_ref(self) -> RunningThreadRef {
+        RunningThreadRef(unsafe { Arc::from_raw(self.0.as_ptr()) }, PhantomData)
     }
 
     #[inline]
@@ -412,4 +422,9 @@ impl ThreadRawRunning {
     pub fn as_ref(&self) -> &CurrentThread {
         unsafe { self.0.as_ptr().as_ref_unchecked() }
     }
+}
+
+#[inline]
+fn unsafe_cell_init<T>(init: impl Init<T>) -> impl Init<UnsafeCell<T>> {
+    unsafe { cast_init(init) }
 }

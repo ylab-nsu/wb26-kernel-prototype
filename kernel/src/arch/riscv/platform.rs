@@ -61,7 +61,7 @@ impl TargetPlatform for RiscvPlatform {
     }
 
     #[inline]
-    fn get_current_thread_raw() -> ThreadRawRunning {
+    unsafe fn get_current_thread_raw() -> ThreadRawRunning {
         let ptr: *mut CurrentThread;
         unsafe { asm!("mv {}, tp", out(reg) ptr, options(pure, nomem, nostack)) };
         unsafe { ThreadRawRunning::from_ptr(ptr) }

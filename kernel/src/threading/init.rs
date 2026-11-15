@@ -1,16 +1,77 @@
-use crate::arch::traits::TargetAddressSpace;
 use crate::arch::traits::TargetPhysicalAllocator;
+use crate::arch::traits::{TargetAddressSpace, TargetPlatform};
 use crate::arch::{
-    map_kernel_sections, AddressSpace, PhysicalAddress, PhysicalAllocator, VirtualAddress,
-    KERNEL_LAYOUT,
+    map_kernel_sections, AddressSpace, PhysicalAddress, PhysicalAllocator, Platform,
+    VirtualAddress, KERNEL_LAYOUT,
 };
 use crate::drivers::driver_task;
 use crate::threading::thread::{
-    create_initial_invalid_thread, spawn_kernel, spawn_user, THREADS_INDEXES,
+    get_thread, get_threads_count, pseudo_allocate_kernel_stack, push_thread, ThreadBuilder,
+    THREADS_INDEXES,
 };
 use crate::vm::{MappingFlags, MappingPermissions};
 use alloc::sync::Arc;
 use core::arch::global_asm;
+use core::num::NonZeroUsize;
+
+pub unsafe fn create_initial_invalid_thread() -> usize {
+    let id = unsafe { get_threads_count() };
+    let kernel_stack_bottom = pseudo_allocate_kernel_stack(id);
+    let pr0 = ThreadBuilder::default()
+        .id(id)
+        .is_user(false)
+        .not_valid(true)
+        .initial_pc(1.try_into().unwrap())
+        .kernel_stack(kernel_stack_bottom)
+        .build();
+    unsafe {
+        push_thread(pr0);
+    }
+    let thread = unsafe { get_thread(id) };
+    let thread = thread.try_claim().unwrap();
+    let thread = thread.run();
+    unsafe { Platform::set_current_thread_raw(&thread.into_raw()) }
+    id
+}
+
+pub fn spawn_user(
+    f: extern "C" fn() -> !,
+    user_sp: NonZeroUsize,
+    address_space: Arc<AddressSpace>,
+    user_main: usize,
+) -> usize {
+    let id = unsafe { get_threads_count() };
+    let kernel_stack_bottom = pseudo_allocate_kernel_stack(id);
+    let thread = ThreadBuilder::default()
+        .id(id)
+        .is_user(true)
+        .address_space(address_space)
+        .initial_pc(unsafe { NonZeroUsize::new_unchecked(f as usize) })
+        .initial_user_sp(user_sp)
+        .initial_arg0(user_main)
+        .kernel_stack(kernel_stack_bottom)
+        .build();
+    unsafe {
+        push_thread(thread);
+    }
+    id
+}
+
+pub fn spawn_kernel(f: extern "C" fn() -> !, address_space: Arc<AddressSpace>) -> usize {
+    let id = unsafe { get_threads_count() };
+    let kernel_stack_bottom = pseudo_allocate_kernel_stack(id);
+    let thread = ThreadBuilder::default()
+        .id(id)
+        .is_user(false)
+        .address_space(address_space)
+        .initial_pc(unsafe { NonZeroUsize::new_unchecked(f as usize) })
+        .kernel_stack(kernel_stack_bottom)
+        .build();
+    unsafe {
+        push_thread(thread);
+    }
+    id
+}
 
 pub static mut NEXT_USER_STACK: usize = 0x47000000;
 pub const MAX_USER_STACK: usize = 0x48000000;
@@ -51,7 +112,12 @@ pub fn spawn_user_program_hardcoded_stack(prog: UserProgram) {
         }
         NEXT_USER_STACK = stack_end;
     }
-    let _ = spawn_user(unsafe { crt0 }, stack_end, prog.address_space, prog.entry);
+    let _ = spawn_user(
+        unsafe { crt0 },
+        stack_end.try_into().unwrap(),
+        prog.address_space,
+        prog.entry,
+    );
 }
 
 pub fn setup_threads(kernel_address_space: Arc<AddressSpace>) {

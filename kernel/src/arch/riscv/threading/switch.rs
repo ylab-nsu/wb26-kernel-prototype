@@ -1,5 +1,6 @@
 use crate::arch::traits::TargetContext;
 use core::mem::MaybeUninit;
+use pinned_init::{init_from_closure, Init};
 
 #[repr(transparent)]
 #[derive(Debug, Clone)]
@@ -25,13 +26,15 @@ struct RiscvContextInner {
 }
 
 impl TargetContext for RiscvContext {
-    unsafe fn new(initial_context_pc: usize, initial_context_sp: usize) -> Self {
-        let mut context = RiscvContext(MaybeUninit::uninit());
-        let p = context.0.as_mut_ptr();
+    fn init(pc: usize, sp: usize) -> impl Init<Self> {
         unsafe {
-            (*p).ra = initial_context_pc;
-            (*p).sp = initial_context_sp;
+            init_from_closure(move |slot: *mut Self| {
+                let p = (*slot).0.as_mut_ptr();
+                (&raw mut (*p).ra).write(pc);
+                (&raw mut (*p).sp).write(sp);
+
+                Ok(())
+            })
         }
-        context
     }
 }

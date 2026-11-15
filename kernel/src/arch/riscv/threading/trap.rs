@@ -58,10 +58,25 @@ impl TargetTrapFrame for RiscvTrapFrame {
         self
     }
 
+    fn with_arg1(mut self, arg1: usize) -> Self {
+        self.a1 = arg1;
+        self
+    }
+
+    fn with_arg2(mut self, arg2: usize) -> Self {
+        self.a2 = arg2;
+        self
+    }
+
+    fn with_arg3(mut self, arg3: usize) -> Self {
+        self.a3 = arg3;
+        self
+    }
+
     fn with_usermode(mut self, is_usermode: bool) -> Self {
         const SSTATUS_SPP: usize = 0x100;
         self.sstatus &= !SSTATUS_SPP;
-        self.sstatus |= if is_usermode { SSTATUS_SPP } else { 0 };
+        self.sstatus |= if is_usermode { 0 } else { SSTATUS_SPP };
         self
     }
 

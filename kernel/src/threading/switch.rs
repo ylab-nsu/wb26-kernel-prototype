@@ -1,6 +1,6 @@
 use crate::arch::traits::{TargetAddressSpace, TargetPlatform};
 use crate::arch::Platform;
-use crate::threading::thread::{ThreadRawRunning, ThreadRefClaimed};
+use crate::threading::thread::{ThreadRawRunning, ClaimedThreadRef};
 
 #[allow(improper_ctypes)]
 extern "C" {
@@ -11,10 +11,10 @@ extern "C" {
     ) -> usize;
 }
 
-pub unsafe fn switch_to(next: ThreadRefClaimed, schedule_prev: bool) {
+pub unsafe fn switch_to(next: ClaimedThreadRef, schedule_prev: bool) {
     // TODO: need to disable interrupts here and save previous state
     let next = next.run();
-    let prev = Platform::get_current_thread_raw();
+    let prev = unsafe { Platform::get_current_thread_raw() };
     info!("Switching threads from {} to {}", prev.as_ref().id, next.id);
 
     unsafe {

@@ -5,6 +5,7 @@ use crate::{
     vm::{MappingFlags, MappingPermissions},
 };
 use alloc::sync::Arc;
+use pinned_init::Init;
 
 pub trait TargetPlatform {
     fn init();
@@ -28,7 +29,7 @@ pub trait TargetPlatform {
     // todo: remove after switching to a sane memory manager
     fn get_user_va_offset() -> usize;
 
-    fn get_current_thread_raw() -> ThreadRawRunning;
+    unsafe fn get_current_thread_raw() -> ThreadRawRunning;
     unsafe fn set_current_thread_raw(ptr: &ThreadRawRunning);
 }
 
@@ -104,6 +105,9 @@ pub trait TargetTrapFrame: Default + Clone {
     fn with_pc(self, pc: usize) -> Self;
     fn with_sp(self, sp: usize) -> Self;
     fn with_arg0(self, arg0: usize) -> Self;
+    fn with_arg1(self, arg1: usize) -> Self;
+    fn with_arg2(self, arg2: usize) -> Self;
+    fn with_arg3(self, arg3: usize) -> Self;
     fn with_usermode(self, is_usermode: bool) -> Self;
 
     // todo another interface
@@ -122,5 +126,5 @@ pub trait TargetContext: Clone {
     /// The recommended destination is the point in the trap handler
     /// right after the Rust code executed and returned into assembly
     /// (_initial_return_trap).
-    unsafe fn new(initial_pc: usize, initial_sp: usize) -> Self;
+    fn init(pc: usize, sp: usize) -> impl Init<Self>;
 }
