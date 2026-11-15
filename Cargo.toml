@@ -14,3 +14,6 @@ panic = "abort"
 lto = true
 debug = true
 strip = false
+
+[patch.crates-io]
+pinned-init = { path = "vendor/pinned-init" }
