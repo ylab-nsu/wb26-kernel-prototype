@@ -112,6 +112,7 @@ dependencies = [
  "fdt",
  "heapless",
  "llvm-tools",
+ "pinned-init",
  "riscv 0.15.0",
  "sbi",
  "spin",
@@ -148,6 +149,24 @@ name = "pastey"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
+
+[[package]]
+name = "pinned-init"
+version = "0.0.10+local"
+dependencies = [
+ "paste",
+ "pinned-init-macro",
+ "rustc_version",
+]
+
+[[package]]
+name = "pinned-init-macro"
+version = "0.0.6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "rustc_version",
+]
 
 [[package]]
 name = "proc-macro2"
@@ -240,10 +259,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustc_version"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
+dependencies = [
+ "semver",
+]
+
+[[package]]
 name = "sbi"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c64a569a412de4ad7b123f429e434751d74dd7ed25654af962b93c4d1cd584e"
+
+[[package]]
+name = "semver"
+version = "1.0.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
 name = "spin"
@@ -323,7 +357,3 @@ dependencies = [
  "riscv 0.16.1",
  "sbi",
 ]
-
-[[patch.unused]]
-name = "pinned-init"
-version = "0.0.10"

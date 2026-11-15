@@ -2,6 +2,7 @@
 name = "kernel"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.100"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -30,6 +31,7 @@ bitfield-struct = "0.13.0"
 bitmap-allocator = "0.4.5"
 sync-unsafe-cell = "0.1.1"
 critical-section = { version = "1.2.0", features = ["restore-state-u8"] }
+pinned-init = { version = "0.0.10", default-features = false, features = ["alloc"] }
 
 [build-dependencies]
 llvm-tools = "0.1.1"

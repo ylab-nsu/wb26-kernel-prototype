@@ -294,7 +294,10 @@
 )]
 #![forbid(missing_docs, unsafe_op_in_unsafe_fn)]
 #![cfg_attr(not(feature = "std"), no_std)]
-#![cfg_attr(feature = "alloc", feature(allocator_api))]
+#![cfg_attr(
+    all(feature = "alloc", not(RUSTC_ALLOCATOR_API_IS_STABLE)),
+    feature(allocator_api)
+)]
 #![cfg_attr(
     all(feature = "unsafe-pinned", CONFIG_RUSTC_HAS_UNSAFE_PINNED),
     feature(unsafe_pinned)

@@ -1,7 +1,8 @@
 [package]
 name = "pinned-init"
-version = "0.0.10"
+version = "0.0.10+local"
 edition = "2021"
+rust-version = "1.100"
 
 authors = ["y86-dev"]
 license = "MIT OR Apache-2.0"

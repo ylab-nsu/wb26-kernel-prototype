@@ -27,6 +27,9 @@ pub trait InPlaceInit<T>: Sized {
     /// type.
     ///
     /// If `T: !Unpin` it will not be able to move afterwards.
+    ///
+    /// Err is actually returned only by `T` constructor, because try_new_uninit is not stabilized.
+    /// `handle_alloc_error` is called if out of memory.
     fn try_pin_init<E>(init: impl PinInit<T, E>) -> Result<Pin<Self>, E>
     where
         E: From<AllocError>;
@@ -35,6 +38,9 @@ pub trait InPlaceInit<T>: Sized {
     /// type.
     ///
     /// If `T: !Unpin` it will not be able to move afterwards.
+    ///
+    /// Err is actually never returned, because try_new_uninit is not stabilized.
+    /// `handle_alloc_error` is called if out of memory.
     fn pin_init(init: impl PinInit<T>) -> Result<Pin<Self>, AllocError> {
         // SAFETY: We delegate to `init` and only change the error type.
         let init = unsafe {
@@ -47,11 +53,17 @@ pub trait InPlaceInit<T>: Sized {
     }
 
     /// Use the given initializer to in-place initialize a `T`.
+    ///
+    /// Err is actually returned only by `T` constructor, because try_new_uninit is not stabilized.
+    /// `handle_alloc_error` is called if out of memory.
     fn try_init<E>(init: impl Init<T, E>) -> Result<Self, E>
     where
         E: From<AllocError>;
 
     /// Use the given initializer to in-place initialize a `T`.
+    ///
+    /// Err is actually never returned, because try_new_uninit is not stabilized.
+    /// `handle_alloc_error` is called if out of memory.
     fn init(init: impl Init<T>) -> Result<Self, AllocError> {
         // SAFETY: We delegate to `init` and only change the error type.
         let init = unsafe {
@@ -64,10 +76,16 @@ pub trait InPlaceInit<T>: Sized {
     }
 }
 
+// #[cfg(feature = "alloc")]
+// macro_rules! try_new_uninit {
+//     ($type:ident) => {
+//         $type::try_new_uninit()?
+//     };
+// }
 #[cfg(feature = "alloc")]
 macro_rules! try_new_uninit {
     ($type:ident) => {
-        $type::try_new_uninit()?
+        $type::new_uninit()
     };
 }
 #[cfg(all(feature = "std", not(feature = "alloc")))]
