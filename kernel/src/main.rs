@@ -41,47 +41,49 @@ use crate::syscall::handle_syscall;
 use crate::exception::handle_exception;
 use crate::time::Duration;
 use crate::timer_queue::{TimerCallback, TimerKind, TimerQueue};
+use static_cell::StaticCell;
 
-static TIMER_QUEUE: TimerQueue = TimerQueue::new(arch::time::Alarm::get());
-
-fn setup_reschedule_timer() {
-    TIMER_QUEUE.enqueue(
-        TimerCallback::Reschedule,
-        Duration::MIN,
-        TimerKind::Repeating(Duration::from_secs(1)),
-    );
-}
-
-static INTERRUPT_SERVICE: InterruptService = InterruptService::new();
+static TIMER_QUEUE: StaticCell<TimerQueue> = StaticCell::new();
+static INTERRUPT_SERVICE: StaticCell<InterruptService> = StaticCell::new();
 
 pub fn kernel_main(ctx: BootContext) -> ! {
     info!("Starting kernel (kernel_main())");
 
+    let BootContext { address_space } = ctx;
+    let kernel_address_space = Arc::new(address_space);
+
+    // Init all kernel services
+    let timer_queue = TIMER_QUEUE.init(TimerQueue::new(arch::time::Alarm::get()));
+    let interrupt_service = INTERRUPT_SERVICE.init(InterruptService::new());
+
     info!("Initializing interrupts service");
 
     let syscall_handler = Box::new(|ctx| handle_syscall(ctx));
-    let timer_handler = Box::new(|| TIMER_QUEUE.handle_timers());
+    let timer_handler = Box::new(|| timer_queue.handle_timers());
     let exception_handler = Box::new(|e| handle_exception(e));
-    let global_trap_handler = Box::new(|cause| INTERRUPT_SERVICE.handle_trap(cause));
+    let global_trap_handler = Box::new(|cause| interrupt_service.handle_trap(cause));
 
-    let _syscall_int_handle = INTERRUPT_SERVICE
+    let _syscall_int_handle = interrupt_service
         .register_trap_handler(TrapHandler::SysCall(syscall_handler))
         .unwrap();
-    let _timer_int_handle = INTERRUPT_SERVICE
+    let _timer_int_handle = interrupt_service
         .register_trap_handler(TrapHandler::Timer(timer_handler))
         .unwrap();
-    let _exception_handle = INTERRUPT_SERVICE
+    let _exception_handle = interrupt_service
         .register_trap_handler(TrapHandler::Exception(exception_handler))
         .unwrap();
     InterruptController::get()
         .set_global_trap_handler(global_trap_handler)
         .unwrap();
 
-    let BootContext { address_space } = ctx;
-    let kernel_address_space = Arc::new(address_space);
+    info!("Initializing timer queue");
+    timer_queue.enqueue(
+        TimerCallback::Reschedule,
+        Duration::MIN,
+        TimerKind::Repeating(Duration::from_secs(1)),
+    );
 
     setup_threads(kernel_address_space);
-    setup_reschedule_timer();
 
     unsafe {
         Platform::enable_interrupts();
