@@ -34,6 +34,7 @@ critical-section = { version = "1.2.0", features = ["restore-state-u8"] }
 pinned-init = { version = "0.0.10", default-features = false, features = ["alloc"] }
 derive_setters = "0.1.9"
 num-traits = { version = "0.2", default-features = false }
+static_cell = "2.1.1"
 
 [build-dependencies]
 llvm-tools = "0.1.1"

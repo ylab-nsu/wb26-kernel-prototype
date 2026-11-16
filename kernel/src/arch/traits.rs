@@ -4,7 +4,11 @@ use crate::{
     arch::{Mapping, PhysicalAddress, PhysicalAllocation, VirtualAddress},
     vm::{MappingFlags, MappingPermissions},
 };
-use alloc::sync::Arc;
+use crate::arch::threading::trap::{ GlobalTrapHandlerRegistrationError, GlobalTrapHandler };
+use alloc::{
+    sync::Arc,
+    boxed::Box,
+};
 use pinned_init::Init;
 
 pub trait TargetPlatform {
@@ -159,4 +163,11 @@ pub trait TargetAlarm {
     type Ticks;
 
     fn set_next(&self, ticks: Self::Ticks) -> Result<(), ()>;
+}
+
+pub trait TargetInterruptController {
+    type GlobalTrapHandlerGuard<'a>
+        where Self: 'a;
+
+    fn register_global_trap_handler(&self, handler: Box<GlobalTrapHandler>) -> Result<Self::GlobalTrapHandlerGuard<'_>, GlobalTrapHandlerRegistrationError>;
 }
