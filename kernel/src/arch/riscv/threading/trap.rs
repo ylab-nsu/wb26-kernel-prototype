@@ -1,4 +1,5 @@
 use crate::arch::traits::TargetTrapFrame;
+use crate::arch::TrapFrame;
 use crate::syscall::handle_syscall;
 use riscv::interrupt::{Exception, Interrupt, Trap};
 use riscv::register::mtvec::TrapMode;
@@ -40,7 +41,12 @@ pub struct RiscvTrapFrame {
     t5: usize,
     t6: usize,
     sstatus: usize,
+    padding: usize,
 }
+
+const _: () = {
+    assert!(size_of::<TrapFrame>() % 16 == 0);
+};
 
 impl TargetTrapFrame for RiscvTrapFrame {
     fn with_pc(mut self, pc: usize) -> Self {
@@ -75,8 +81,10 @@ impl TargetTrapFrame for RiscvTrapFrame {
 
     fn with_usermode(mut self, is_usermode: bool) -> Self {
         const SSTATUS_SPP: usize = 0x100;
+        const SSTATUS_SPIE: usize = 0x20;
         self.sstatus &= !SSTATUS_SPP;
         self.sstatus |= if is_usermode { 0 } else { SSTATUS_SPP };
+        self.sstatus |= SSTATUS_SPIE;
         self
     }
 
@@ -105,6 +113,7 @@ pub fn setup_trap() {
 
 #[export_name = "_handle_trap_rust"]
 extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
+    debug_assert!((frame as *const RiscvTrapFrame).addr() % 16 == 0);
     let x: Trap<Interrupt, Exception> = riscv::register::scause::read().cause().try_into().unwrap();
 
     // Special bypass for direct SBI calls such as sbi_print!

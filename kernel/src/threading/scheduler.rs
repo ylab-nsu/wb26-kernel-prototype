@@ -1,6 +1,8 @@
 use crate::drivers::TEST_DRIVER_ANY;
 use crate::threading::switch::switch_to;
-use crate::threading::thread::{get_thread, get_threads_count, THREADS_INDEXES};
+use crate::threading::thread::{
+    get_current_thread_id, get_thread, get_threads_count, THREADS_INDEXES,
+};
 
 static mut LAST_USER: usize = unsafe { THREADS_INDEXES.user_start - 1 };
 
@@ -25,6 +27,11 @@ pub extern "C" fn reschedule() {
             next_thread
         }
     };
+
+    if next_thread == unsafe { get_current_thread_id() } {
+        debug!("Want to switch to myself, do not switch");
+        return;
+    }
 
     let next = unsafe { get_thread(next_thread) };
     let next = next.try_claim().unwrap(); // No multithreading yet, can unwrap
