@@ -1,7 +1,12 @@
 use crate::arch::TrapFrame;
 use crate::{
-    arch::traits::{TargetTrapFrame, TargetInterruptController},
-    threading::trap::{TrapCause, TrapHandlerRegistrationError, ExceptionKind},
+    arch::{
+        traits::{TargetTrapFrame, TargetInterruptController},
+        threading::trap::{
+            TrapCause, GlobalTrapHandlerRegistrationError,
+            ExceptionKind, GlobalTrapHandler,
+        },
+    }
 };
 use spin::{
     once::Once,
@@ -106,7 +111,7 @@ impl TargetTrapFrame for RiscvTrapFrame {
     }
 }
 
-static KERNEL_TRAP_HANDLER: Once<Box<dyn Fn(TrapCause) -> bool + Send + Sync + 'static>, Spin> = Once::new();
+static KERNEL_TRAP_HANDLER: Once<Box<dyn GlobalTrapHandler>, Spin> = Once::new();
 
 pub struct RiscvInterruptController(());
 
@@ -118,16 +123,14 @@ impl RiscvInterruptController {
 }
 
 impl TargetInterruptController for RiscvInterruptController {
-    fn set_trap_handler<F>(&self, handler: F) -> Result<(), TrapHandlerRegistrationError> 
-    where
-        F: Fn(TrapCause) -> bool + Send + Sync + 'static
+    fn set_global_trap_handler(&self, handler: impl GlobalTrapHandler) -> Result<(), GlobalTrapHandlerRegistrationError> 
     {
         let mut handler = Some(handler);
         KERNEL_TRAP_HANDLER.call_once(|| Box::new(handler.take().unwrap()));
 
         match handler {
             None => Ok(()),
-            Some(_) => Err(TrapHandlerRegistrationError::AlreadyOccupied),
+            Some(_) => Err(GlobalTrapHandlerRegistrationError::AlreadyOccupied),
         }
     }
 }
@@ -190,24 +193,22 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
                 });
                 frame.pc += 4;
                 ret
-            }
-
+            },
             Trap::Exception(Exception::InstructionFault) => {
                 sbi::timer::set_timer(u64::MAX).expect("Can't set timer");
                 let epc = riscv::register::sepc::read();
                 error!("InstructionFault {epc:x} {}", frame.pc);
 
                 handler(TrapCause::Exception(ExceptionKind::InstructionFault{ address: epc }))
-            }
-
+            },
             Trap::Interrupt(cause) => {
                 println!("interrupt:{cause:?}");
                 false
-            }
+            },
             Trap::Exception(cause) => {
                 println!("exception:{cause:?}");
                 false
-            }
+            },
         }
     } else { false }
 }

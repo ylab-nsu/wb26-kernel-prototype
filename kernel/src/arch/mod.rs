@@ -7,6 +7,7 @@ use crate::arch::traits::{
 };
 
 pub mod traits;
+pub mod threading;
 
 mod common;
 mod macros;

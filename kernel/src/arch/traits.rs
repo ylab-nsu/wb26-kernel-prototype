@@ -3,8 +3,8 @@ use crate::{
     allocator::AllocatorError,
     arch::{Mapping, PhysicalAddress, PhysicalAllocation, VirtualAddress},
     vm::{MappingFlags, MappingPermissions},
-    threading::trap::{ TrapHandlerRegistrationError, TrapCause },
 };
+use crate::arch::threading::trap::{ GlobalTrapHandlerRegistrationError, TrapCause, GlobalTrapHandler };
 use alloc::sync::Arc;
 use pinned_init::Init;
 
@@ -163,6 +163,5 @@ pub trait TargetAlarm {
 }
 
 pub trait TargetInterruptController {
-    fn set_trap_handler<F>(&self, handler: F) -> Result<(), TrapHandlerRegistrationError>
-        where F: Fn(TrapCause) -> bool + Send + Sync + 'static;
+    fn set_global_trap_handler(&self, handler: impl GlobalTrapHandler) -> Result<(), GlobalTrapHandlerRegistrationError>;
 }

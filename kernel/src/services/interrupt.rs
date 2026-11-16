@@ -1,10 +1,9 @@
-use crate::threading::trap::{
-    TrapHandlerRegistrationError,
+use crate::arch::threading::trap::{
     ExceptionKind,
     TrapCause,
 };
-use alloc::boxed::Box;
 use crate::sync::InterruptMutex;
+use alloc::boxed::Box;
 
 type TimerHandler = dyn Fn() -> bool + Send + Sync;
 type SysCallHandler = dyn Fn(usize, usize, usize, usize, usize) -> () + Send + Sync;
@@ -30,6 +29,11 @@ pub enum TrapHandlerGuard<'a> {
     SysCall(&'a InterruptMutex<Option<Box<SysCallHandler>>>),
     Exception(&'a InterruptMutex<Option<Box<ExceptionHandler>>>),
     ExternalInterrupt(&'a InterruptMutex<Option<Box<ExternalInterruptHandler>>>),
+}
+
+#[derive(Debug)]
+pub enum TrapHandlerRegistrationError {
+    AlreadyOccupied,
 }
 
 impl Drop for TrapHandlerGuard<'_> {

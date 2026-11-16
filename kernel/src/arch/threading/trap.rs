@@ -1,3 +1,4 @@
+
 pub enum ExceptionKind {
     InstructionFault{ address: usize },
     Unknown,
@@ -11,7 +12,13 @@ pub enum TrapCause {
 }
 
 #[derive(Debug)]
-pub enum TrapHandlerRegistrationError {
+pub enum GlobalTrapHandlerRegistrationError {
     AlreadyOccupied,
 }
 
+pub trait GlobalTrapHandler: Fn(TrapCause) -> bool + Send + Sync + 'static {}
+
+impl<F> GlobalTrapHandler for F
+where
+    F: Fn(TrapCause) -> bool + Send + Sync + 'static,
+{}
