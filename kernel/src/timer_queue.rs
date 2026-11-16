@@ -89,6 +89,36 @@ impl TimerQueue {
         cancel_handle
     }
 
+    pub fn enqueue_reschedule(&self, period: Duration) -> CancelHandle {
+        self.enqueue(
+            TimerCallback::Reschedule,
+            period,
+            TimerKind::Repeating(period),
+        )
+    }
+
+    pub fn enqueue_oneshot<F>(&self, callback: F, delay: Duration) -> CancelHandle
+    where
+        F: FnMut(TimerCallbackContext) + Send + 'static,
+    {
+        self.enqueue(
+            TimerCallback::Immediate(Box::new(callback)),
+            delay,
+            TimerKind::OneShot,
+        )
+    }
+
+    pub fn enqueue_repeating<F>(&self, callback: F, period: Duration) -> CancelHandle
+    where
+        F: FnMut(TimerCallbackContext) + Send + 'static,
+    {
+        self.enqueue(
+            TimerCallback::Immediate(Box::new(callback)),
+            period,
+            TimerKind::Repeating(period),
+        )
+    }
+
     pub fn handle_timers(&self) -> bool {
         let current_time = Instant::now();
 

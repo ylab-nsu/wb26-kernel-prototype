@@ -26,16 +26,12 @@ use crate::arch::{traits::TargetPlatform, Platform};
 use crate::boot::BootContext;
 use crate::threading::init::setup_threads;
 use crate::time::Duration;
-use crate::timer_queue::{TimerCallback, TimerKind, TimerQueue};
+use crate::timer_queue::TimerQueue;
 
 pub static TIMER_QUEUE: TimerQueue = TimerQueue::new(arch::time::Alarm::get());
 
 fn setup_reschedule_timer() {
-    TIMER_QUEUE.enqueue(
-        TimerCallback::Reschedule,
-        Duration::MIN,
-        TimerKind::Repeating(Duration::from_secs(1)),
-    );
+    TIMER_QUEUE.enqueue_reschedule(Duration::from_secs(1));
 }
 
 pub fn kernel_main(ctx: BootContext) -> ! {
