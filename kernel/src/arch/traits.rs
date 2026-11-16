@@ -166,5 +166,8 @@ pub trait TargetAlarm {
 }
 
 pub trait TargetInterruptController {
-    fn set_global_trap_handler(&self, handler: Box<GlobalTrapHandler>) -> Result<(), GlobalTrapHandlerRegistrationError>;
+    type GlobalTrapHandlerGuard<'a>
+        where Self: 'a;
+
+    fn register_global_trap_handler(&self, handler: Box<GlobalTrapHandler>) -> Result<Self::GlobalTrapHandlerGuard<'_>, GlobalTrapHandlerRegistrationError>;
 }

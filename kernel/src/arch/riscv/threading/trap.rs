@@ -1,18 +1,23 @@
 use crate::arch::TrapFrame;
 use crate::{
     arch::{
-        traits::{TargetTrapFrame, TargetInterruptController},
+        traits::{TargetTrapFrame, TargetInterruptController, TargetPlatform},
         threading::trap::{
             TrapCause, GlobalTrapHandlerRegistrationError,
             ExceptionKind, GlobalTrapHandler, SysCallContext,
         },
+        riscv::platform::RiscvPlatform,
     }
 };
 use spin::{
     once::Once,
+    mutex::Mutex,
     relax::Spin,
 };
-use alloc::boxed::Box;
+use alloc::{ 
+    boxed::Box,
+    sync::Arc,
+};
 use riscv::interrupt::{Exception, Interrupt, Trap};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec::Stvec;
@@ -111,27 +116,90 @@ impl TargetTrapFrame for RiscvTrapFrame {
     }
 }
 
-static KERNEL_TRAP_HANDLER: Once<Box<GlobalTrapHandler>, Spin> = Once::new();
+static INTERRUPT_CONTROLLER: Once<RiscvInterruptController> = Once::new();
 
-pub struct RiscvInterruptController(());
+pub struct RiscvInterruptController {
+    global_trap_handler: Mutex<Option<Arc<GlobalTrapHandler>>, Spin>,
+}
+
+pub struct GlobalTrapHandlerGuard<'a> {
+    state: &'a Mutex<Option<Arc<GlobalTrapHandler>>, Spin>,
+}
 
 impl RiscvInterruptController {
-    pub const fn get() -> &'static Self {
-        static INSTANCE: RiscvInterruptController = RiscvInterruptController(());
-        &INSTANCE
+    const fn new() -> Self {
+        RiscvInterruptController {
+            global_trap_handler: Mutex::new(None),
+        }
+    }
+
+    fn handle_trap(&self, cause: TrapCause) -> bool {
+        let interrupt_state = RiscvPlatform::interrupts_enabled();
+        RiscvPlatform::disable_interrupts();
+
+        let maybe_arc_handler = {
+            (*self.global_trap_handler.lock()).clone()
+        };
+
+        unsafe {
+            RiscvPlatform::set_interrupts_enabled(interrupt_state);
+        }
+
+        if let Some(arc_handler) = maybe_arc_handler {
+            (*arc_handler)(cause)
+        }
+        else {
+            false
+        }
+    }
+
+    pub fn take() -> Option<&'static Self> {
+        let mut controller = Some(RiscvInterruptController::new());
+        let res = INTERRUPT_CONTROLLER.call_once(|| controller.take().unwrap());
+
+        match controller {
+            Some(_) => None,
+            None => Some(res),
+        }
     }
 }
 
 impl TargetInterruptController for RiscvInterruptController {
-    fn set_global_trap_handler(&self, handler: Box<GlobalTrapHandler>) -> Result<(), GlobalTrapHandlerRegistrationError> 
-    {
-        let mut handler = Some(handler);
-        KERNEL_TRAP_HANDLER.call_once(|| handler.take().unwrap());
+    type GlobalTrapHandlerGuard<'a> = GlobalTrapHandlerGuard<'a>
+        where Self: 'a;
 
-        match handler {
-            None => Ok(()),
-            Some(_) => Err(GlobalTrapHandlerRegistrationError::AlreadyOccupied),
+
+    fn register_global_trap_handler(&self, handler: Box<GlobalTrapHandler>) -> Result<GlobalTrapHandlerGuard<'_>, GlobalTrapHandlerRegistrationError> 
+    {
+        let interrupt_state = RiscvPlatform::interrupts_enabled();
+        RiscvPlatform::disable_interrupts();
+
+        let res = {
+            let mut guard = self.global_trap_handler.lock();
+            match *guard {
+                None => {
+                    *guard = Some(Arc::from(handler));
+                    Ok(GlobalTrapHandlerGuard { state: &self.global_trap_handler })
+                },
+                Some(_) => { 
+                    Err(GlobalTrapHandlerRegistrationError::AlreadyOccupied)
+                },
+            }
+        };
+
+        unsafe {
+            RiscvPlatform::set_interrupts_enabled(interrupt_state);
         }
+
+        return res;
+    }
+}
+
+impl Drop for GlobalTrapHandlerGuard<'_> {
+    fn drop(&mut self) {
+        RiscvPlatform::interrupt_free(|| {
+            *self.state.lock() = None;
+        });
     }
 }
 
@@ -176,15 +244,14 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
 
     info!("Trap cause: {x:?}");
 
-    if let Some(handler) = KERNEL_TRAP_HANDLER.get() {
-        let handler = &*handler;
+    if let Some(controller) = INTERRUPT_CONTROLLER.get() {
         match x {
             Trap::Interrupt(Interrupt::SupervisorTimer) => {
-                handler(TrapCause::Timer)
+                controller.handle_trap(TrapCause::Timer)
             },
             Trap::Exception(Exception::UserEnvCall) => {
                 // println!("Received non-SBI UserEnvCall");
-                let ret = handler(TrapCause::SysCall(SysCallContext {
+                let ret = controller.handle_trap(TrapCause::SysCall(SysCallContext {
                         syscall_number: frame.a7,
                         arg1: frame.a0, 
                         arg2: frame.a1, 
@@ -199,7 +266,7 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
                 let epc = riscv::register::sepc::read();
                 error!("InstructionFault {epc:x} {}", frame.pc);
 
-                handler(TrapCause::Exception(ExceptionKind::InstructionFault{ address: epc }))
+                controller.handle_trap(TrapCause::Exception(ExceptionKind::InstructionFault{ address: epc }))
             },
             Trap::Interrupt(cause) => {
                 println!("interrupt:{cause:?}");

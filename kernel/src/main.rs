@@ -52,6 +52,9 @@ pub fn kernel_main(ctx: BootContext) -> ! {
     let BootContext { address_space } = ctx;
     let kernel_address_space = Arc::new(address_space);
 
+    // Take all platform services
+    let interrupt_controller = InterruptController::take().unwrap();
+
     // Init all kernel services
     let timer_queue = TIMER_QUEUE.init(TimerQueue::new(arch::time::Alarm::get()));
     let interrupt_service = INTERRUPT_SERVICE.init(InterruptService::new());
@@ -72,8 +75,8 @@ pub fn kernel_main(ctx: BootContext) -> ! {
     let _exception_handle = interrupt_service
         .register_trap_handler(TrapHandler::Exception(exception_handler))
         .unwrap();
-    InterruptController::get()
-        .set_global_trap_handler(global_trap_handler)
+    let _global_trap_handle = interrupt_controller
+        .register_global_trap_handler(global_trap_handler)
         .unwrap();
 
     info!("Initializing timer queue");

@@ -25,6 +25,7 @@ cfg_select! {
         pub type Mapping = riscv::vm::address_space::Sv39Mapping;
 
         pub type InterruptController = riscv::threading::trap::RiscvInterruptController;
+        pub type PlatformGlobalTrapHandlerGuard<'a> = riscv::threading::trap::GlobalTrapHandlerGuard<'a>;
         pub type TrapFrame = riscv::threading::trap::RiscvTrapFrame;
         pub type Context = riscv::threading::switch::RiscvContext;
 
