@@ -4,31 +4,55 @@ use core::{
     task::{Context, Poll},
 };
 
-use crate::arch::{Platform, traits::TargetPlatform};
+use crate::{
+    time::{Duration, Instant},
+    timer_queue::CancelHandle,
+    TIMER_QUEUE,
+};
 
 struct SleepFuture {
-    target_time: u64,
+    target_time: Instant,
+    timer_handle: Option<CancelHandle>,
 }
 
 impl Future for SleepFuture {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let current_time = Platform::micros();
+        let current_time = Instant::now();
 
         if current_time > self.target_time {
             Poll::Ready(())
         } else {
-            cx.waker().wake_by_ref();
+            if self.timer_handle.is_none() {
+                let waker = cx.waker().clone();
+
+                let handle = TIMER_QUEUE.enqueue_oneshot(
+                    move |_| waker.wake_by_ref(),
+                    self.target_time - current_time,
+                );
+
+                self.get_mut().timer_handle = Some(handle);
+            }
+
             Poll::Pending
         }
     }
 }
 
+impl Drop for SleepFuture {
+    fn drop(&mut self) {
+        if let Some(handle) = &self.timer_handle {
+            handle.cancel();
+        }
+    }
+}
+
 pub fn sleep(micros: u64) -> impl Future<Output = ()> {
-    let current_time = Platform::micros();
+    let current_time = Instant::now();
 
     SleepFuture {
-        target_time: current_time + micros,
+        target_time: current_time + Duration::from_micros(micros),
+        timer_handle: None,
     }
 }
