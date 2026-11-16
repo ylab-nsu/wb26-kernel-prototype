@@ -57,7 +57,7 @@ pub struct InterruptMutex<T> {
 
 pub struct InterruptMutexGuard<'a, T: 'a + ?Sized> {
     guard: MutexGuard<'a, T>,
-    critical_section: critical_section::RestoreState,
+    interrupt_state: bool,
 }
 
 impl<T> InterruptMutex<T> {
@@ -68,22 +68,26 @@ impl<T> InterruptMutex<T> {
     }
 
     pub fn lock(&self) -> InterruptMutexGuard<'_, T> {
-        let state = unsafe { critical_section::acquire() };
+        let interrupt_state = Platform::interrupts_enabled();
+        Platform::disable_interrupts();
         InterruptMutexGuard {
             guard: self.inner.lock(),
-            critical_section: state,
+            interrupt_state,
         }
     }
 
     pub fn try_lock(&self) -> Option<InterruptMutexGuard<'_, T>> {
-        let state = unsafe { critical_section::acquire() };
+        let interrupt_state = Platform::interrupts_enabled();
+        Platform::disable_interrupts();
         if let Some(guard) = self.inner.try_lock() {
             Some(InterruptMutexGuard {
                 guard,
-                critical_section: state,
+                interrupt_state,
             })
         } else {
-            unsafe { critical_section::release(state) }
+            unsafe {
+                Platform::set_interrupts_enabled(interrupt_state);
+            }
             None
         }
     }
@@ -95,7 +99,9 @@ impl<T> InterruptMutex<T> {
 
 impl<T: ?Sized> Drop for InterruptMutexGuard<'_, T> {
     fn drop(&mut self) {
-        unsafe { critical_section::release(self.critical_section) }
+        unsafe {
+            Platform::set_interrupts_enabled(self.interrupt_state);
+        }
     }
 }
 
