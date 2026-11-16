@@ -4,9 +4,17 @@ pub enum ExceptionKind {
     Unknown,
 }
 
+pub struct SysCallContext {
+    pub syscall_number: usize,
+    pub arg1: usize,
+    pub arg2: usize,
+    pub arg3: usize,
+    pub arg4: usize,
+}
+
 pub enum TrapCause {
     Timer,
-    SysCall{ syscall_number: usize, arg1: usize, arg2: usize, arg3: usize, arg4: usize },
+    SysCall(SysCallContext),
     Exception(ExceptionKind),
     ExternalInterrupt(u8),
 }

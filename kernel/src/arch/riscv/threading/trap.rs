@@ -4,7 +4,7 @@ use crate::{
         traits::{TargetTrapFrame, TargetInterruptController},
         threading::trap::{
             TrapCause, GlobalTrapHandlerRegistrationError,
-            ExceptionKind, GlobalTrapHandler,
+            ExceptionKind, GlobalTrapHandler, SysCallContext,
         },
     }
 };
@@ -184,13 +184,13 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
             },
             Trap::Exception(Exception::UserEnvCall) => {
                 // println!("Received non-SBI UserEnvCall");
-                let ret = handler(TrapCause::SysCall {
+                let ret = handler(TrapCause::SysCall(SysCallContext {
                         syscall_number: frame.a7,
                         arg1: frame.a0, 
                         arg2: frame.a1, 
                         arg3: frame.a2, 
                         arg4: frame.a3,
-                });
+                }));
                 frame.pc += 4;
                 ret
             },

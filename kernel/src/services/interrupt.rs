@@ -1,12 +1,13 @@
 use crate::arch::threading::trap::{
     ExceptionKind,
     TrapCause,
+    SysCallContext,
 };
 use crate::sync::InterruptMutex;
 use alloc::{ boxed::Box, sync::Arc };
 
 type TimerHandler = dyn Fn() -> bool + Send + Sync;
-type SysCallHandler = dyn Fn(usize, usize, usize, usize, usize) -> () + Send + Sync;
+type SysCallHandler = dyn Fn(SysCallContext) -> () + Send + Sync;
 type ExceptionHandler = dyn Fn(ExceptionKind) -> () + Send + Sync;
 type ExternalInterruptHandler = dyn Fn() -> () + Send + Sync;
 
@@ -119,12 +120,12 @@ impl InterruptService {
 
                 maybe_arc_handler.map_or(false, |arc_handler| (*arc_handler)())
             },
-            TrapCause::SysCall{ syscall_number, arg1, arg2, arg3, arg4 } => {
+            TrapCause::SysCall(ctx) => {
                 let maybe_arc_handler = {
                     (*self.syscall_handler.lock()).clone()
                 };
                 if let Some(arc_handler) = maybe_arc_handler {
-                    (*arc_handler)(syscall_number, arg1, arg2, arg3, arg4);
+                    (*arc_handler)(ctx);
                 }
                 false
             },

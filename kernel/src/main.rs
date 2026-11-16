@@ -51,7 +51,7 @@ fn setup_reschedule_timer() {
     );
 }
 
-fn exception_handler(e: ExceptionKind) {
+fn handle_exception(e: ExceptionKind) {
     match e {
         ExceptionKind::Unknown => panic!("Unknown exception occured"),
         ExceptionKind::InstructionFault{ address } => panic!("InstructionFault {address:x}"),
@@ -65,10 +65,23 @@ pub fn kernel_main(ctx: BootContext) -> ! {
 
     info!("Initializing interrupts service");
 
-    let syscall_int_handle = INTERRUPT_SERVICE.register_trap_handler(TrapHandler::SysCall(Box::new(|num, a0, a1, a2, a3| handle_syscall(num, a0, a1, a2, a3)))).unwrap();
-    let timer_int_handle = INTERRUPT_SERVICE.register_trap_handler(TrapHandler::Timer(Box::new(|| TIMER_QUEUE.handle_timers()))).unwrap();
-    let exception_handle = INTERRUPT_SERVICE.register_trap_handler(TrapHandler::Exception(Box::new(|e| exception_handler(e)))).unwrap();
-    InterruptController::get().set_global_trap_handler(Box::new(|cause| INTERRUPT_SERVICE.handle_trap(cause))).unwrap();
+    let syscall_handler = Box::new(|ctx| handle_syscall(ctx));
+    let timer_handler = Box::new(|| TIMER_QUEUE.handle_timers());
+    let exception_handler = Box::new(|e| handle_exception(e));
+    let global_trap_handler = Box::new(|cause| INTERRUPT_SERVICE.handle_trap(cause));
+
+    let _syscall_int_handle = INTERRUPT_SERVICE
+        .register_trap_handler(TrapHandler::SysCall(syscall_handler))
+        .unwrap();
+    let _timer_int_handle = INTERRUPT_SERVICE
+        .register_trap_handler(TrapHandler::Timer(timer_handler))
+        .unwrap();
+    let _exception_handle = INTERRUPT_SERVICE
+        .register_trap_handler(TrapHandler::Exception(exception_handler))
+        .unwrap();
+    InterruptController::get()
+        .set_global_trap_handler(global_trap_handler)
+        .unwrap();
 
     let BootContext { address_space } = ctx;
     let kernel_address_space = Arc::new(address_space);
