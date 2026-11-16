@@ -4,7 +4,7 @@ use crate::{
     arch::{Mapping, PhysicalAddress, PhysicalAllocation, VirtualAddress},
     vm::{MappingFlags, MappingPermissions},
 };
-use crate::arch::threading::trap::{ GlobalTrapHandlerRegistrationError, TrapCause, GlobalTrapHandler };
+use crate::arch::threading::trap::{ GlobalTrapHandlerRegistrationError, GlobalTrapHandler };
 use alloc::{
     sync::Arc,
     boxed::Box,

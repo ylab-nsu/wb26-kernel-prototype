@@ -13,6 +13,7 @@ pub mod boot;
 pub mod drivers;
 pub mod sync;
 mod syscall;
+mod exception;
 pub mod threading;
 pub mod time;
 pub mod timer_queue;
@@ -32,12 +33,12 @@ use crate::arch::{
 };
 use crate::boot::BootContext;
 use crate::threading::init::setup_threads;
-use crate::arch::threading::trap::ExceptionKind;
 use crate::services::interrupt::{
     TrapHandler,
     InterruptService,
 };
 use crate::syscall::handle_syscall;
+use crate::exception::handle_exception;
 use crate::time::Duration;
 use crate::timer_queue::{TimerCallback, TimerKind, TimerQueue};
 
@@ -49,13 +50,6 @@ fn setup_reschedule_timer() {
         Duration::MIN,
         TimerKind::Repeating(Duration::from_secs(1)),
     );
-}
-
-fn handle_exception(e: ExceptionKind) {
-    match e {
-        ExceptionKind::Unknown => panic!("Unknown exception occured"),
-        ExceptionKind::InstructionFault{ address } => panic!("InstructionFault {address:x}"),
-    };
 }
 
 static INTERRUPT_SERVICE: InterruptService = InterruptService::new();
