@@ -111,7 +111,7 @@ impl TargetTrapFrame for RiscvTrapFrame {
     }
 }
 
-static KERNEL_TRAP_HANDLER: Once<Box<dyn GlobalTrapHandler>, Spin> = Once::new();
+static KERNEL_TRAP_HANDLER: Once<Box<GlobalTrapHandler>, Spin> = Once::new();
 
 pub struct RiscvInterruptController(());
 
@@ -123,10 +123,10 @@ impl RiscvInterruptController {
 }
 
 impl TargetInterruptController for RiscvInterruptController {
-    fn set_global_trap_handler(&self, handler: impl GlobalTrapHandler) -> Result<(), GlobalTrapHandlerRegistrationError> 
+    fn set_global_trap_handler(&self, handler: Box<GlobalTrapHandler>) -> Result<(), GlobalTrapHandlerRegistrationError> 
     {
         let mut handler = Some(handler);
-        KERNEL_TRAP_HANDLER.call_once(|| Box::new(handler.take().unwrap()));
+        KERNEL_TRAP_HANDLER.call_once(|| handler.take().unwrap());
 
         match handler {
             None => Ok(()),

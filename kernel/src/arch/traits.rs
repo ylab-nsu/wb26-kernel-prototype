@@ -5,7 +5,10 @@ use crate::{
     vm::{MappingFlags, MappingPermissions},
 };
 use crate::arch::threading::trap::{ GlobalTrapHandlerRegistrationError, TrapCause, GlobalTrapHandler };
-use alloc::sync::Arc;
+use alloc::{
+    sync::Arc,
+    boxed::Box,
+};
 use pinned_init::Init;
 
 pub trait TargetPlatform {
@@ -163,5 +166,5 @@ pub trait TargetAlarm {
 }
 
 pub trait TargetInterruptController {
-    fn set_global_trap_handler(&self, handler: impl GlobalTrapHandler) -> Result<(), GlobalTrapHandlerRegistrationError>;
+    fn set_global_trap_handler(&self, handler: Box<GlobalTrapHandler>) -> Result<(), GlobalTrapHandlerRegistrationError>;
 }

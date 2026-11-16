@@ -68,7 +68,7 @@ pub fn kernel_main(ctx: BootContext) -> ! {
     let syscall_int_handle = INTERRUPT_SERVICE.register_trap_handler(TrapHandler::SysCall(Box::new(|num, a0, a1, a2, a3| handle_syscall(num, a0, a1, a2, a3)))).unwrap();
     let timer_int_handle = INTERRUPT_SERVICE.register_trap_handler(TrapHandler::Timer(Box::new(|| TIMER_QUEUE.handle_timers()))).unwrap();
     let exception_handle = INTERRUPT_SERVICE.register_trap_handler(TrapHandler::Exception(Box::new(|e| exception_handler(e)))).unwrap();
-    InterruptController::get().set_global_trap_handler(|cause| INTERRUPT_SERVICE.handle_trap(cause)).unwrap();
+    InterruptController::get().set_global_trap_handler(Box::new(|cause| INTERRUPT_SERVICE.handle_trap(cause))).unwrap();
 
     let BootContext { address_space } = ctx;
     let kernel_address_space = Arc::new(address_space);
