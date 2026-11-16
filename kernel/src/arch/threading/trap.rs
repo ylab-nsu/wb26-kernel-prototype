@@ -24,4 +24,4 @@ pub enum GlobalTrapHandlerRegistrationError {
     AlreadyOccupied,
 }
 
-pub type GlobalTrapHandler = dyn Fn(TrapCause) -> bool + Send + Sync + 'static;
+pub type GlobalTrapHandler = dyn Fn(TrapCause) -> bool + Send + Sync;
