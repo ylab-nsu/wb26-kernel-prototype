@@ -3,7 +3,11 @@ use crate::{
     arch::traits::{TargetTrapFrame, TargetInterruptController},
     threading::trap::{TrapCause, TrapHandlerRegistrationError, ExceptionKind},
 };
-use once_cell_no_std::OnceCell;
+use spin::{
+    once::Once,
+    relax::Spin,
+};
+use alloc::boxed::Box;
 use riscv::interrupt::{Exception, Interrupt, Trap};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec::Stvec;
@@ -102,13 +106,29 @@ impl TargetTrapFrame for RiscvTrapFrame {
     }
 }
 
-static KERNEL_TRAP_HANDLER: OnceCell<fn(TrapCause) -> bool> = OnceCell::new();
+static KERNEL_TRAP_HANDLER: Once<Box<dyn Fn(TrapCause) -> bool + Send + Sync + 'static>, Spin> = Once::new();
 
-pub struct RiscvInterruptController;
+pub struct RiscvInterruptController(());
+
+impl RiscvInterruptController {
+    pub const fn get() -> &'static Self {
+        static INSTANCE: RiscvInterruptController = RiscvInterruptController(());
+        &INSTANCE
+    }
+}
 
 impl TargetInterruptController for RiscvInterruptController {
-    fn set_kernel_trap_handler(handler: fn(TrapCause) -> bool) -> Result<(), TrapHandlerRegistrationError> {
-        return KERNEL_TRAP_HANDLER.set(handler).map_err(|_| TrapHandlerRegistrationError::AlreadyOccupied);
+    fn set_trap_handler<F>(&self, handler: F) -> Result<(), TrapHandlerRegistrationError> 
+    where
+        F: Fn(TrapCause) -> bool + Send + Sync + 'static
+    {
+        let mut handler = Some(handler);
+        KERNEL_TRAP_HANDLER.call_once(|| Box::new(handler.take().unwrap()));
+
+        match handler {
+            None => Ok(()),
+            Some(_) => Err(TrapHandlerRegistrationError::AlreadyOccupied),
+        }
     }
 }
 
@@ -154,6 +174,7 @@ extern "C" fn handle_trap(frame: &mut RiscvTrapFrame) -> bool {
     info!("Trap cause: {x:?}");
 
     if let Some(handler) = KERNEL_TRAP_HANDLER.get() {
+        let handler = &*handler;
         match x {
             Trap::Interrupt(Interrupt::SupervisorTimer) => {
                 handler(TrapCause::Timer)

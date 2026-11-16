@@ -163,5 +163,6 @@ pub trait TargetAlarm {
 }
 
 pub trait TargetInterruptController {
-    fn set_kernel_trap_handler(handler: fn(TrapCause) -> bool) -> Result<(), TrapHandlerRegistrationError>;
+    fn set_trap_handler<F>(&self, handler: F) -> Result<(), TrapHandlerRegistrationError>
+        where F: Fn(TrapCause) -> bool + Send + Sync + 'static;
 }

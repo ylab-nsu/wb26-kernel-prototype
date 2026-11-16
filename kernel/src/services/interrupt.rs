@@ -3,86 +3,105 @@ use crate::threading::trap::{
     ExceptionKind,
     TrapCause,
 };
-use crate::arch::{
-    InterruptController,
-    traits::TargetInterruptController,
-};
-use core::sync::atomic::Ordering;
-use atomic_fn::AtomicFnPtr;
-use once_cell_no_std::OnceCell;
+use alloc::boxed::Box;
+use crate::sync::InterruptMutex;
 
-type TimerHandler = fn() -> bool;
-type SysCallHandler = fn(usize, usize, usize, usize, usize) -> ();
-type ExceptionHandler = fn(ExceptionKind) -> ();
-type ExternalInterruptHandler = fn() -> ();
+type TimerHandler = dyn Fn() -> bool + Send + Sync;
+type SysCallHandler = dyn Fn(usize, usize, usize, usize, usize) -> () + Send + Sync;
+type ExceptionHandler = dyn Fn(ExceptionKind) -> () + Send + Sync;
+type ExternalInterruptHandler = dyn Fn() -> () + Send + Sync;
 
 pub enum TrapHandler {
-    Timer(TimerHandler),
-    SysCall(SysCallHandler),
-    Exception(ExceptionHandler),
-    ExternalInterrupt{ irq: u8, handler: ExternalInterruptHandler },
+    Timer(Box<TimerHandler>),
+    SysCall(Box<SysCallHandler>),
+    Exception(Box<ExceptionHandler>),
+    ExternalInterrupt{ irq: u8, handler: Box<ExternalInterruptHandler> },
 }
 
 pub struct InterruptService {
-    timer_handler: AtomicFnPtr<Option<TimerHandler>>,
-    syscall_handler: AtomicFnPtr<Option<SysCallHandler>>,
-    exception_handler: AtomicFnPtr<Option<ExceptionHandler>>,
-    external_int_handlers: [AtomicFnPtr<Option<ExternalInterruptHandler>>; 256],
+    timer_handler: InterruptMutex<Option<Box<TimerHandler>>>,
+    syscall_handler: InterruptMutex<Option<Box<SysCallHandler>>>,
+    exception_handler: InterruptMutex<Option<Box<ExceptionHandler>>>,
+    external_int_handlers: [InterruptMutex<Option<Box<ExternalInterruptHandler>>>; 256],
 }
 
 pub enum TrapHandlerGuard<'a> {
-    Timer(&'a AtomicFnPtr<Option<TimerHandler>>),
-    SysCall(&'a AtomicFnPtr<Option<SysCallHandler>>),
-    Exception(&'a AtomicFnPtr<Option<ExceptionHandler>>),
-    ExternalInterrupt(&'a AtomicFnPtr<Option<ExternalInterruptHandler>>),
+    Timer(&'a InterruptMutex<Option<Box<TimerHandler>>>),
+    SysCall(&'a InterruptMutex<Option<Box<SysCallHandler>>>),
+    Exception(&'a InterruptMutex<Option<Box<ExceptionHandler>>>),
+    ExternalInterrupt(&'a InterruptMutex<Option<Box<ExternalInterruptHandler>>>),
 }
 
 impl Drop for TrapHandlerGuard<'_> {
     fn drop(&mut self) {
         match self {
-            TrapHandlerGuard::Timer(atom) => atom.store(None, Ordering::Relaxed),
-            TrapHandlerGuard::SysCall(atom) => atom.store(None, Ordering::Relaxed),
-            TrapHandlerGuard::Exception(atom) => atom.store(None, Ordering::Relaxed),
-            TrapHandlerGuard::ExternalInterrupt(atom) => atom.store(None, Ordering::Relaxed),
-        }
+            TrapHandlerGuard::Timer(mtx) => *mtx.lock() = None,
+            TrapHandlerGuard::SysCall(mtx) => *mtx.lock() = None,
+            TrapHandlerGuard::Exception(mtx) => *mtx.lock() = None,
+            TrapHandlerGuard::ExternalInterrupt(mtx) => *mtx.lock() = None,
+        };
     }
 }
 
 impl InterruptService {
-    fn new() -> Self {
+    pub const fn new() -> Self {
         InterruptService {
-            timer_handler: AtomicFnPtr::new(None),
-            syscall_handler: AtomicFnPtr::new(None),
-            exception_handler: AtomicFnPtr::new(None),
-            external_int_handlers: core::array::from_fn(|_| AtomicFnPtr::new(None)),
+            timer_handler: InterruptMutex::new(None),
+            syscall_handler: InterruptMutex::new(None),
+            exception_handler: InterruptMutex::new(None),
+            external_int_handlers: [const { InterruptMutex::new(None) }; 256],
         }
     }
 
     pub fn register_trap_handler(&self, handler: TrapHandler) -> Result<TrapHandlerGuard<'_>, TrapHandlerRegistrationError> {
         match handler {
             TrapHandler::Timer(handler) => {
-                self.timer_handler
-                    .compare_exchange(None, Some(handler), Ordering::Relaxed, Ordering::Relaxed)
-                    .map(|_| TrapHandlerGuard::Timer(&self.timer_handler))
-                    .map_err(|_| TrapHandlerRegistrationError::AlreadyOccupied)
+                let mut guard = self.timer_handler.lock();
+                match *guard {
+                    None => {
+                        *guard = Some(handler);
+                        Ok(TrapHandlerGuard::Timer(&self.timer_handler))
+                    },
+                    Some(_) => {
+                        Err(TrapHandlerRegistrationError::AlreadyOccupied)
+                    },
+                }
             },
             TrapHandler::SysCall(handler) => {
-                self.syscall_handler
-                    .compare_exchange(None, Some(handler), Ordering::Relaxed, Ordering::Relaxed)
-                    .map(|_| TrapHandlerGuard::SysCall(&self.syscall_handler))
-                    .map_err(|_| TrapHandlerRegistrationError::AlreadyOccupied)
+                let mut guard = self.syscall_handler.lock();
+                match *guard {
+                    None => {
+                        *guard = Some(handler);
+                        Ok(TrapHandlerGuard::SysCall(&self.syscall_handler))
+                    },
+                    Some(_) => {
+                        Err(TrapHandlerRegistrationError::AlreadyOccupied)
+                    },
+                }
             },
             TrapHandler::Exception(handler) => {
-                self.exception_handler
-                    .compare_exchange(None, Some(handler), Ordering::Relaxed, Ordering::Relaxed)
-                    .map(|_| TrapHandlerGuard::Exception(&self.exception_handler))
-                    .map_err(|_| TrapHandlerRegistrationError::AlreadyOccupied)
+                let mut guard = self.exception_handler.lock();
+                match *guard {
+                    None => {
+                        *guard = Some(handler);
+                        Ok(TrapHandlerGuard::Exception(&self.exception_handler))
+                    },
+                    Some(_) => {
+                        Err(TrapHandlerRegistrationError::AlreadyOccupied)
+                    },
+                }
             },
             TrapHandler::ExternalInterrupt{ irq, handler } => {
-                self.external_int_handlers[irq as usize]
-                    .compare_exchange(None, Some(handler), Ordering::Relaxed, Ordering::Relaxed)
-                    .map(|_| TrapHandlerGuard::ExternalInterrupt(&self.external_int_handlers[irq as usize]))
-                    .map_err(|_| TrapHandlerRegistrationError::AlreadyOccupied)
+                let mut guard = self.external_int_handlers[irq as usize].lock();
+                match *guard {
+                    None => {
+                        *guard = Some(handler);
+                        Ok(TrapHandlerGuard::ExternalInterrupt(&self.external_int_handlers[irq as usize]))
+                    },
+                    Some(_) => {
+                        Err(TrapHandlerRegistrationError::AlreadyOccupied)
+                    },
+                }
             },
         }
     }
@@ -90,47 +109,30 @@ impl InterruptService {
     pub fn handle_trap(&self, trap: TrapCause) -> bool {
         match trap {
             TrapCause::Timer => {
-                self.timer_handler.load(Ordering::Relaxed).map_or(false, |handler| handler())
+                let guard = self.timer_handler.lock();
+                (*guard).as_ref().map_or(false, |boxedHandler| (*boxedHandler)())
             },
             TrapCause::SysCall{ syscall_number, arg1, arg2, arg3, arg4 } => {
-                if let Some(handler) = self.syscall_handler.load(Ordering::Relaxed) {
-                    handler(syscall_number, arg1, arg2, arg3, arg4);
+                let guard = self.syscall_handler.lock();
+                if let Some(boxedHandler) = &*guard {
+                    (*boxedHandler)(syscall_number, arg1, arg2, arg3, arg4);
                 }
                 false
             },
             TrapCause::Exception(kind) => {
-                if let Some(handler) = self.exception_handler.load(Ordering::Relaxed) {
-                    handler(kind);
+                let guard = self.exception_handler.lock();
+                if let Some(boxedHandler) = &*guard {
+                    (*boxedHandler)(kind);
                 }
                 false
             },
             TrapCause::ExternalInterrupt(irq) => {
-                if let Some(handler) = self.external_int_handlers[irq as usize].load(Ordering::Relaxed) {
-                    handler();
+                let guard = self.external_int_handlers[irq as usize].lock();
+                if let Some(boxedHandler) = &*guard {
+                    (*boxedHandler)();
                 }
                 false
             },
         }
     }
-}
-
-#[derive(Debug)]
-pub enum InterruptServiceInitializationError {
-    AlreadyInited,
-    AnotherKernelTrapHandlerAlreadySet,
-}
-
-static INTERRUPT_SERVICE: OnceCell<InterruptService> = OnceCell::new();
-
-fn kernel_trap_handler(trap: TrapCause) -> bool {
-    INTERRUPT_SERVICE.get().map_or(false, |service| service.handle_trap(trap))
-}
-
-pub fn init() -> Result<&'static InterruptService, InterruptServiceInitializationError> {
-    INTERRUPT_SERVICE.set(InterruptService::new()).map_err(|_| InterruptServiceInitializationError::AlreadyInited)?;
-
-    InterruptController::set_kernel_trap_handler(kernel_trap_handler).map_err(|_| InterruptServiceInitializationError::AnotherKernelTrapHandlerAlreadySet)?;
-
-    // SAFETY: If first statement returned Ok - the cell must be non-empty
-    Ok(INTERRUPT_SERVICE.get().unwrap())
 }
