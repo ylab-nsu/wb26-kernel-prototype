@@ -10,7 +10,7 @@ use core::future::Future;
 use alloc::sync::Arc;
 use crossbeam_queue::SegQueue;
 
-use crate::executor::{futures::{yield_now, sleep}, task::Task};
+use crate::{executor::{futures::{sleep, yield_now}, task::Task}, time::Duration};
 
 pub mod futures;
 
@@ -59,11 +59,11 @@ impl Executor {
 
 async fn compound() {
     debug!("Start compound");
-    sleep(1_000_000).await;
+    sleep(Duration::from_secs(1)).await;
     debug!("One compound");
     yield_now().await;
     debug!("Two compound");
-    sleep(1_000_000).await;
+    sleep(Duration::from_secs(1)).await;
     debug!("Finish compound");
 }
 
@@ -73,7 +73,7 @@ async fn test() {
     debug!("One");
     yield_now().await;
     debug!("Two");
-    sleep(1_000_000).await;
+    sleep(Duration::from_secs(1)).await;
     debug!("Finish");
 }
 
@@ -82,11 +82,11 @@ pub extern "C" fn executor() -> ! {
 
     Executor::get().spawn(async {
         debug!("Start2");
-        sleep(500_000).await;
+        sleep(Duration::from_millis(500)).await;
         debug!("One2");
         compound().await;
         debug!("Two2");
-        sleep(2_000_000).await;
+        sleep(Duration::from_secs(2)).await;
         debug!("Finish2");
     });
 

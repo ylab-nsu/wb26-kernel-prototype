@@ -48,11 +48,9 @@ impl Drop for SleepFuture {
     }
 }
 
-pub fn sleep(micros: u64) -> impl Future<Output = ()> {
-    let current_time = Instant::now();
-
+pub fn sleep(duration: Duration) -> impl Future<Output = ()> {
     SleepFuture {
-        target_time: current_time + Duration::from_micros(micros),
+        target_time: Instant::now() + duration,
         timer_handle: None,
     }
 }
