@@ -155,8 +155,8 @@ impl Duration {
     pub fn from_micros(micros: PlatformTemporal) -> Self {
         Self::try_from_micros(micros).expect("overflow when creating duration from micros")
     }
-    pub fn from_secs(seconds: PlatformTemporal) -> Self {
-        Self::try_from_secs(seconds).expect("overflow when creating duration from seconds")
+    pub fn from_secs(secs: PlatformTemporal) -> Self {
+        Self::try_from_secs(secs).expect("overflow when creating duration from seconds")
     }
 
     pub fn from_millis_floor(millis: PlatformTemporal) -> Self {
@@ -165,8 +165,8 @@ impl Duration {
     pub fn from_micros_floor(micros: PlatformTemporal) -> Self {
         Self::try_from_micros_floor(micros).expect("overflow when creating duration from micros")
     }
-    pub fn from_secs_floor(seconds: PlatformTemporal) -> Self {
-        Self::try_from_secs_floor(seconds).expect("overflow when creating duration from seconds")
+    pub fn from_secs_floor(secs: PlatformTemporal) -> Self {
+        Self::try_from_secs_floor(secs).expect("overflow when creating duration from seconds")
     }
 
     pub fn try_from_nanos(nanos: PlatformTemporal) -> Option<Self> {
@@ -181,8 +181,8 @@ impl Duration {
         TimeConverter::get().try_from_millis(millis).map(|ticks| Self { ticks })
     }
 
-    pub fn try_from_secs(seconds: PlatformTemporal) -> Option<Self> {
-        TimeConverter::get().try_from_secs(seconds).map(|ticks| Self { ticks })
+    pub fn try_from_secs(secs: PlatformTemporal) -> Option<Self> {
+        TimeConverter::get().try_from_secs(secs).map(|ticks| Self { ticks })
     }
 
     pub fn try_from_micros_floor(micros: PlatformTemporal) -> Option<Self> {
@@ -193,8 +193,8 @@ impl Duration {
         TimeConverter::get().try_from_millis_floor(millis).map(|ticks| Self { ticks })
     }
 
-    pub fn try_from_secs_floor(seconds: PlatformTemporal) -> Option<Self> {
-        TimeConverter::get().try_from_secs_floor(seconds).map(|ticks| Self { ticks })
+    pub fn try_from_secs_floor(secs: PlatformTemporal) -> Option<Self> {
+        TimeConverter::get().try_from_secs_floor(secs).map(|ticks| Self { ticks })
     }
 
     pub const fn as_ticks(&self) -> PlatformTicks {
