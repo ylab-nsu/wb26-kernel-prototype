@@ -1,6 +1,7 @@
 use crate::arch::traits::{TargetContext, TargetPlatform, TargetTrapFrame};
 use crate::arch::{AddressSpace, Context, Platform, TrapFrame};
 use crate::sync::current_core_id;
+use crate::threading::cpu_id::CpuId;
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::cell::{Cell, UnsafeCell};
@@ -124,7 +125,7 @@ impl ThreadBuilder {
                 address_space: address_space,
                 valid: !not_valid,
                 is_user,
-                claimed_lock: AtomicUsize::new(usize::MAX),
+                claimed_lock: AtomicUsize::new(CpuId::option_to_raw(None)),
                 used_lock: AtomicBool::new(false),
             }))
             .expect("out of memory while creating a thread"), // Will not work on stable Rust
@@ -150,6 +151,12 @@ pub struct Thread {
 }
 
 impl Thread {
+    pub fn get_cpu_id(&self) -> Option<CpuId> {
+        let raw = self.claimed_lock.load(Ordering::Relaxed);
+
+        unsafe { CpuId::option_from_raw(raw) }
+    }
+
     pub fn terminate(&mut self) {
         self.valid = false;
         self.address_space.take();
@@ -265,8 +272,8 @@ pub struct ThreadRef(Arc<Thread>);
 impl ThreadRef {
     pub fn try_claim(self) -> Result<ClaimedThreadRef, ThreadRef> {
         match self.0.claimed_lock.compare_exchange(
-            usize::MAX,
-            current_core_id(),
+            CpuId::option_to_raw(None),
+            CpuId::option_to_raw(CpuId::new(current_core_id())),
             Ordering::Acquire,
             Ordering::Relaxed,
         ) {
@@ -309,7 +316,7 @@ pub struct ClaimedThreadRef(Arc<CurrentThread>, PhantomData<Cell<()>>);
 impl ClaimedThreadRef {
     pub fn release(self) -> ThreadRef {
         let this = ManuallyDrop::new(self);
-        this.0.claimed_lock.store(usize::MAX, Ordering::Release);
+        this.0.claimed_lock.store(CpuId::option_to_raw(None), Ordering::Release);
         ThreadRef(unsafe { convert_arc!(core::ptr::read(&this.0)) })
     }
 
@@ -355,7 +362,7 @@ pub struct RunningThreadRef(Arc<CurrentThread>, PhantomData<Cell<()>>);
 
 impl RunningThreadRef {
     pub unsafe fn stop(self) -> ThreadRef {
-        (*self.0).claimed_lock.store(usize::MAX, Ordering::Release);
+        (*self.0).claimed_lock.store(CpuId::option_to_raw(None), Ordering::Release);
         (*self.0).used_lock.store(false, Ordering::Release);
         let this = ManuallyDrop::new(self);
         ThreadRef(unsafe { convert_arc!(core::ptr::read(&this.0)) })
