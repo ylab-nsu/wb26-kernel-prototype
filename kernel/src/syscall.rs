@@ -1,24 +1,17 @@
 use crate::arch::AddressSpace;
 use crate::drivers::{put_into_queue, TestDriverMessage, TEST_DRIVER_QUEUE};
 use crate::threading::scheduler::reschedule;
-use crate::threading::thread::{get_current_thread_id, get_thread};
+use crate::threading::thread::with_current;
 use alloc::sync::{Arc, Weak};
 
 fn get_current_address_space() -> Arc<AddressSpace> {
-    unsafe { get_thread(get_current_thread_id()) }
-        .address_space
-        .as_ref()
-        .unwrap()
-        .clone()
+    with_current(|current| current.address_space.as_ref().unwrap().clone())
 }
 
 fn get_current_address_space_weak() -> Weak<AddressSpace> {
-    Arc::downgrade(
-        &unsafe { get_thread(get_current_thread_id()) }
-            .address_space
-            .as_ref()
-            .unwrap(),
-    )
+    Arc::downgrade(&with_current(|current| {
+        current.address_space.as_ref().unwrap().clone()
+    }))
 }
 
 pub fn handle_syscall(syscall_number: usize, arg1: usize, arg2: usize, arg3: usize, _arg4: usize) {

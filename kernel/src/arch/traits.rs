@@ -1,4 +1,4 @@
-use crate::threading::thread::ThreadRawRunning;
+use crate::threading::thread::RunningThreadRaw;
 use crate::{
     allocator::AllocatorError,
     arch::{Mapping, PhysicalAddress, PhysicalAllocation, VirtualAddress},
@@ -29,8 +29,8 @@ pub trait TargetPlatform {
     // todo: remove after switching to a sane memory manager
     fn get_user_va_offset() -> usize;
 
-    unsafe fn get_current_thread_raw() -> ThreadRawRunning;
-    unsafe fn set_current_thread_raw(ptr: &ThreadRawRunning);
+    unsafe fn get_current_thread_raw() -> RunningThreadRaw;
+    unsafe fn set_current_thread_raw(ptr: &RunningThreadRaw);
 }
 
 pub trait TargetAddressSpace {
@@ -127,6 +127,8 @@ pub trait TargetContext: Clone {
     /// right after the Rust code executed and returned into assembly
     /// (_initial_return_trap).
     fn init(pc: usize, sp: usize) -> impl Init<Self>;
+    /// To be used when creating a stub nodes for an intrusive queue
+    const NEW_STUB: Self;
 }
 
 pub trait TargetTimer {

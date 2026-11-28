@@ -28,7 +28,13 @@ impl Future for SleepFuture {
                 let waker = cx.waker().clone();
 
                 let handle = TIMER_QUEUE.enqueue_oneshot(
-                    move |_| waker.wake_by_ref(),
+                    move |ctx| {
+                        debug!(
+                            "SleepFuture timer expired, target_time: {:?}",
+                            ctx.target_time
+                        );
+                        waker.wake_by_ref()
+                    },
                     self.target_time - current_time,
                 );
 

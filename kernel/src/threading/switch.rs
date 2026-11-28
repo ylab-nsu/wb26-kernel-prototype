@@ -1,13 +1,14 @@
 use crate::arch::traits::{TargetAddressSpace, TargetPlatform};
 use crate::arch::Platform;
-use crate::threading::thread::{ThreadRawRunning, ClaimedThreadRef};
+use crate::threading::scheduler::schedule_thread;
+use crate::threading::thread::{RunningThreadRaw, ClaimedThreadRef};
 
 #[allow(improper_ctypes)]
 extern "C" {
     fn _switch_thread(
-        prev_context: ThreadRawRunning,
+        prev_context: RunningThreadRaw,
         schedule_prev: bool,
-        next_context: ThreadRawRunning,
+        next_context: RunningThreadRaw,
     ) -> usize;
 }
 
@@ -35,12 +36,11 @@ pub unsafe fn switch_to(next: ClaimedThreadRef, schedule_prev: bool) {
 }
 
 #[export_name = "_finish_switch_rust"]
-extern "C" fn finish_switch(prev: ThreadRawRunning, schedule_prev: bool) {
+extern "C" fn finish_switch(prev: RunningThreadRaw, schedule_prev: bool) {
     let prev = prev.into_ref();
     let prev = unsafe { prev.stop() };
     if schedule_prev {
-        // Will add to the scheduler queue when the scheduler is changed to use queues
-        let _ = prev;
+        schedule_thread(prev);
     }
     // TODO: need to restore interrupts state
 }

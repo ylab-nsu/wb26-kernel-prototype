@@ -2,12 +2,13 @@ use crate::arch::traits::{TargetContext, TargetPlatform, TargetTrapFrame};
 use crate::arch::{AddressSpace, Context, Platform, TrapFrame};
 use crate::sync::current_core_id;
 use alloc::sync::{Arc, Weak};
-use alloc::vec::Vec;
+use cordyceps::mpsc_queue::Links;
+use cordyceps::Linked;
 use core::cell::{Cell, UnsafeCell};
 use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
 use core::num::NonZeroUsize;
-use core::ops::{Deref, DerefMut};
+use core::ops::Deref;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use derive_setters::Setters;
@@ -126,6 +127,8 @@ impl ThreadBuilder {
                 is_user,
                 claimed_lock: AtomicUsize::new(usize::MAX),
                 used_lock: AtomicBool::new(false),
+                is_enqueued: AtomicBool::new(false),
+                links: Links::default(),
             }))
             .expect("out of memory while creating a thread"), // Will not work on stable Rust
         )
@@ -147,12 +150,67 @@ pub struct Thread {
     pub is_user: bool,
     claimed_lock: AtomicUsize,
     used_lock: AtomicBool,
+    pub is_enqueued: AtomicBool,
+    links: Links<Thread>,
 }
+unsafe impl Sync for Thread {}
+unsafe impl Send for Thread {}
 
 impl Thread {
     pub fn terminate(&mut self) {
         self.valid = false;
         self.address_space.take();
+    }
+
+    /// Create the stub element for a new intrusive queue.
+    /// Must not use this Thread the same way as a normal thread.
+    pub const unsafe fn new_stub() -> Thread {
+        Thread {
+            id: usize::MAX,
+            context: UnsafeCell::new(Context::NEW_STUB),
+            address_space: None,
+            valid: false,
+            is_user: false,
+            claimed_lock: AtomicUsize::new(usize::MAX),
+            used_lock: AtomicBool::new(false),
+            is_enqueued: AtomicBool::new(false),
+            links: Links::new_stub(),
+        }
+    }
+
+    pub unsafe fn new_stub2() -> ThreadRef {
+        ThreadRef(
+            Arc::init(init!(Thread {
+                id: usize::MAX,
+                context <- unsafe_cell_init(
+                    Context::init(0, 0)
+                ),
+                address_space: None,
+                valid: false,
+                is_user: false,
+                claimed_lock: AtomicUsize::new(usize::MAX),
+                used_lock: AtomicBool::new(false),
+                is_enqueued: AtomicBool::new(false),
+                links: Links::new(),
+            }))
+            .expect("out of memory while creating a stub thread"), // Will not work on stable Rust
+        )
+    }
+}
+
+unsafe impl Linked<Links<Thread>> for Thread {
+    type Handle = ThreadRef;
+
+    fn into_ptr(handle: ThreadRef) -> NonNull<Self> {
+        handle.into_raw().as_ptr()
+    }
+
+    unsafe fn from_ptr(ptr: NonNull<Self>) -> ThreadRef {
+        unsafe { ThreadRaw::from_ptr(ptr) }.into_ref()
+    }
+
+    unsafe fn links(target: NonNull<Self>) -> NonNull<Links<Thread>> {
+        unsafe { NonNull::new_unchecked(&raw mut (*target.as_ptr()).links) }
     }
 }
 
@@ -200,62 +258,15 @@ pub struct ThreadsIndexes {
     pub user_start: usize,
 }
 
-static mut THREADS: Vec<ThreadRef> = Vec::new();
-
-pub static mut THREADS_INDEXES: ThreadsIndexes = ThreadsIndexes {
-    // These will be initialized later, but before scheduling started
-    driver_task: 1,
-    user_start: 1,
-};
-
 pub unsafe fn get_current_thread_id() -> usize {
     unsafe { Platform::get_current_thread_raw().as_ref().id }
 }
 
-pub unsafe fn get_threads_count() -> usize {
-    unsafe { THREADS.len() }
-}
-
-pub unsafe fn get_thread(id: usize) -> ThreadRef {
-    unsafe { THREADS.get_mut(id).unwrap().clone() }
-}
-// Don't worry, all this THREADS array thing will be removed soon
-pub unsafe fn push_thread(thread: ThreadRef) {
-    unsafe {
-        THREADS.push(thread);
-    }
-}
+pub static THREADS_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 /**
 Thread wrappers
 **/
-
-// !Clone !Sync Send
-#[must_use]
-#[repr(transparent)]
-#[derive(Debug)]
-pub struct ThreadRefSetup(Arc<Thread>, PhantomData<Cell<()>>);
-
-impl ThreadRefSetup {
-    pub fn finish(self) -> ThreadRef {
-        ThreadRef(self.0)
-    }
-}
-
-impl Deref for ThreadRefSetup {
-    type Target = Thread;
-    fn deref(&self) -> &Thread {
-        &self.0
-    }
-}
-
-impl DerefMut for ThreadRefSetup {
-    fn deref_mut(&mut self) -> &mut Thread {
-        debug_assert_eq!(Arc::strong_count(&self.0), 1);
-        debug_assert_eq!(Arc::weak_count(&self.0), 0);
-        unsafe { &mut *(Arc::as_ptr(&self.0) as *mut Thread) }
-    }
-}
 
 // Clone Sync Send
 #[repr(transparent)]
@@ -281,12 +292,45 @@ impl ThreadRef {
     pub fn downgrade(&self) -> ThreadWeak {
         ThreadWeak(Arc::downgrade(&self.0))
     }
+
+    pub fn into_raw(self) -> ThreadRaw {
+        let this = ManuallyDrop::new(self);
+        let arc = unsafe { core::ptr::read(&this.0) };
+        unsafe { ThreadRaw(NonNull::new_unchecked(Arc::into_raw(arc).cast_mut())) }
+    }
 }
 
 impl Deref for ThreadRef {
     type Target = Thread;
     fn deref(&self) -> &Thread {
         &self.0
+    }
+}
+
+// !Clone !Copy !Sync Send
+#[must_use = ""]
+#[repr(transparent)]
+pub struct ThreadRaw(NonNull<Thread>);
+unsafe impl Send for ThreadRaw {}
+
+impl ThreadRaw {
+    pub fn into_ref(self) -> ThreadRef {
+        ThreadRef(unsafe { Arc::from_raw(self.0.as_ptr()) })
+    }
+
+    #[inline]
+    pub fn as_ptr(&self) -> NonNull<Thread> {
+        self.0
+    }
+
+    #[inline]
+    pub unsafe fn from_ptr(ptr: NonNull<Thread>) -> Self {
+        Self(ptr)
+    }
+
+    #[inline]
+    pub fn as_ref(&self) -> &Thread {
+        unsafe { self.0.as_ptr().as_ref_unchecked() }
     }
 }
 
@@ -348,7 +392,7 @@ impl Drop for ClaimedThreadRef {
     }
 }
 
-// Clone !Sync !Send
+// !Clone !Sync !Send
 #[must_use = ""]
 #[repr(transparent)]
 pub struct RunningThreadRef(Arc<CurrentThread>, PhantomData<Cell<()>>);
@@ -369,10 +413,10 @@ impl RunningThreadRef {
         ThreadWeak(unsafe { convert_weak!(Arc::downgrade(&self.0)) })
     }
 
-    pub fn into_raw(self) -> ThreadRawRunning {
+    pub fn into_raw(self) -> RunningThreadRaw {
         let this = ManuallyDrop::new(self);
         let arc = unsafe { core::ptr::read(&this.0) };
-        unsafe { ThreadRawRunning(NonNull::new_unchecked(Arc::into_raw(arc).cast_mut())) }
+        unsafe { RunningThreadRaw(NonNull::new_unchecked(Arc::into_raw(arc).cast_mut())) }
     }
 }
 
@@ -401,21 +445,21 @@ pub fn with_current<R>(f: impl FnOnce(&CurrentThread) -> R) -> R {
 // !Clone !Copy !Sync !Send
 #[must_use = ""]
 #[repr(transparent)]
-pub struct ThreadRawRunning(NonNull<CurrentThread>);
+pub struct RunningThreadRaw(NonNull<CurrentThread>);
 
-impl ThreadRawRunning {
+impl RunningThreadRaw {
     pub fn into_ref(self) -> RunningThreadRef {
         RunningThreadRef(unsafe { Arc::from_raw(self.0.as_ptr()) }, PhantomData)
     }
 
     #[inline]
-    pub fn as_ptr(&self) -> *mut CurrentThread {
-        self.0.as_ptr()
+    pub fn as_ptr(&self) -> NonNull<CurrentThread> {
+        self.0
     }
 
     #[inline]
-    pub unsafe fn from_ptr(ptr: *mut CurrentThread) -> Self {
-        Self(unsafe { NonNull::new_unchecked(ptr) })
+    pub unsafe fn from_ptr(ptr: NonNull<CurrentThread>) -> Self {
+        Self(ptr)
     }
 
     #[inline]

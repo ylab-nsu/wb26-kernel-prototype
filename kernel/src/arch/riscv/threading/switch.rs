@@ -37,4 +37,6 @@ impl TargetContext for RiscvContext {
             })
         }
     }
+
+    const NEW_STUB: Self = Self(MaybeUninit::uninit());
 }
